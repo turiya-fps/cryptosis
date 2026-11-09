@@ -1,0 +1,14 @@
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+testdata/fuzz/**/corpus-tmp/
+.DS_Store
+.env*
+*.gpg
+*.pgp
+*.asc
+*.sig
+.gnupg/
+.claude/settings.local.json
