@@ -165,6 +165,27 @@ func scanConfigFile(path string) ([]ConfigWarning, error) {
 	return ScanConfig(f, path)
 }
 
+// HomeDir returns the gpg home directory in use: the runner's explicit
+// homedir, or gpg's default detected once via gpgconf. Used to show e.g.
+// where gpg stored the revocation certificate of a generated key.
+func (r *Runner) HomeDir(ctx context.Context) (string, error) {
+	r.homeOnce.Do(func() {
+		r.homeDir, r.homeErr = r.detectHomeDir(ctx)
+	})
+	return r.homeDir, r.homeErr
+}
+
+func (r *Runner) detectHomeDir(ctx context.Context) (string, error) {
+	if r.homedir != "" {
+		return r.homedir, nil
+	}
+	dirs, err := r.gpgconfDirs(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dirs["homedir"], nil
+}
+
 // gpgconfDirs runs the gpgconf installed next to gpg, avoiding a PATH lookup.
 func (r *Runner) gpgconfDirs(ctx context.Context) (map[string]string, error) {
 	gpgconf := filepath.Join(filepath.Dir(r.bin), "gpgconf")

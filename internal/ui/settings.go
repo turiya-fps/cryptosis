@@ -21,6 +21,8 @@ const (
 	settingClipboardClear
 	settingKeyAlgo
 	settingKeyExpiry
+	settingSubkeyExpiry
+	settingOwnertrustSource
 	settingDefaultSigningKey
 	settingArmorFiles
 	settingAccessible
@@ -62,6 +64,8 @@ func (a *App) chooseSetting() (settingID, error) {
 		huh.NewOption("Clipboard auto-clear: "+describeClipboardClear(c.ClipboardClearSeconds), settingClipboardClear),
 		huh.NewOption("New key algorithm: "+c.KeyAlgo, settingKeyAlgo),
 		huh.NewOption("New key expiry: "+c.KeyExpiry, settingKeyExpiry),
+		huh.NewOption("New encryption subkey expiry: "+describeSubkeyExpiry(c.SubkeyExpiryMatchesPrimary), settingSubkeyExpiry),
+		huh.NewOption("Owner trust shown from: "+describeOwnertrustSource(c.OwnertrustFromTrustDB), settingOwnertrustSource),
 		huh.NewOption("Default signing key: "+orDefault(c.DefaultSigningKey, "gpg default"), settingDefaultSigningKey),
 		huh.NewOption("Armor (.asc) file output: "+onOff(c.ArmorFiles), settingArmorFiles),
 		huh.NewOption("Accessible mode: "+onOff(c.AccessibleMode), settingAccessible),
@@ -94,6 +98,10 @@ func (a *App) editSetting(id settingID) (config.Config, bool, error) {
 		err = a.selectKeyAlgo(&updated.KeyAlgo)
 	case settingKeyExpiry:
 		err = a.inputString("New key expiry", "e.g. 2y, 18m, 6w, 30d or never.", &updated.KeyExpiry, validateField(func(c *config.Config, v string) { c.KeyExpiry = v }))
+	case settingSubkeyExpiry:
+		updated.SubkeyExpiryMatchesPrimary, err = a.askConfirm("Give new encryption subkeys the primary key's expiry? (gpg's default: never expires)", updated.SubkeyExpiryMatchesPrimary)
+	case settingOwnertrustSource:
+		updated.OwnertrustFromTrustDB, err = a.askConfirm("Read owner trust from the trust database? (one extra gpg call; exact on gpg 2.2)", updated.OwnertrustFromTrustDB)
 	case settingDefaultSigningKey:
 		err = a.inputString("Default signing key", "Full fingerprint; empty uses gpg's default.", &updated.DefaultSigningKey, validateFingerprintOrEmpty)
 	case settingArmorFiles:
@@ -209,6 +217,20 @@ func describeClipboardClear(seconds int) string {
 		return "off"
 	}
 	return fmt.Sprintf("%ds", seconds)
+}
+
+func describeSubkeyExpiry(matchesPrimary bool) string {
+	if matchesPrimary {
+		return "same as primary"
+	}
+	return "never (gpg default)"
+}
+
+func describeOwnertrustSource(fromTrustDB bool) string {
+	if fromTrustDB {
+		return "trust database"
+	}
+	return "key listing (gpg default)"
 }
 
 func orDefault(value, fallback string) string {

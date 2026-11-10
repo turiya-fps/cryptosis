@@ -34,9 +34,11 @@ func NewHome(t testing.TB, bin string) string {
 	if err != nil {
 		t.Fatalf("create gpg home: %v", err)
 	}
-	// Loopback lets fixtures create passphrase-less keys without a pinentry.
-	agentConf := filepath.Join(home, "gpg-agent.conf")
-	if err := os.WriteFile(agentConf, []byte("allow-loopback-pinentry\n"), 0o600); err != nil {
+	// Loopback lets fixtures create passphrase-less keys without a pinentry;
+	// the fake pinentry covers tests that drive cryptosis's Runner (which never
+	// passes --pinentry-mode), e.g. key generation without a passphrase.
+	conf := "allow-loopback-pinentry\npinentry-program " + writeFakePinentry(t) + "\n"
+	if err := os.WriteFile(filepath.Join(home, "gpg-agent.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatalf("write gpg-agent.conf: %v", err)
 	}
 	t.Cleanup(func() {
@@ -45,6 +47,29 @@ func NewHome(t testing.TB, bin string) string {
 		_ = os.RemoveAll(home)
 	})
 	return home
+}
+
+// writeFakePinentry installs an assuan pinentry that succeeds every prompt
+// with an empty secret, so passphrase-less key generation and use work in
+// headless tests through the real gpg-agent path.
+func writeFakePinentry(t testing.TB) string {
+	t.Helper()
+	script := `#!/bin/sh
+# Minimal assuan pinentry: greet first (the agent waits for it), then OK every
+# request; GETPIN with no data line yields an empty passphrase, CONFIRM accepts.
+printf 'OK fake pinentry\n'
+while IFS= read -r line; do
+  case "$line" in
+    BYE*) printf 'OK\n'; exit 0 ;;
+    *) printf 'OK\n' ;;
+  esac
+done
+`
+	path := filepath.Join(t.TempDir(), "fake-pinentry")
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // G306: gpg-agent must execute it
+		t.Fatalf("write fake pinentry: %v", err)
+	}
+	return path
 }
 
 // GenerateKey creates a passphrase-less key for uid and returns its fingerprint.

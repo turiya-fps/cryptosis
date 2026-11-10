@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -41,7 +42,14 @@ type Command struct {
 	operands []string  // placed after "--"
 	stdin    io.Reader // nil means /dev/null
 	stdout   io.Writer // nil means captured into Result.Stdout
+	// answers, when set, runs the command without --batch but with --no-tty
+	// and --command-fd: gpg prompts arrive as GET_* status lines and are
+	// answered from this script. Only GenRevokeCommand sets it.
+	answers []PromptAnswer
 }
+
+// Answers returns the scripted prompt answers (empty for ordinary commands).
+func (c Command) Answers() []PromptAnswer { return c.answers }
 
 // Label is a short human description of the command.
 func (c Command) Label() string { return c.label }
@@ -84,6 +92,25 @@ func (r Result) Succeeded(requiredKeywords ...string) bool {
 type Runner struct {
 	bin     string
 	homedir string
+
+	homeOnce sync.Once
+	homeDir  string
+	homeErr  error
+}
+
+// PrimaryFingerprint returns the primary key fingerprint from a KEY_CREATED
+// status line. gpg prints one line with type B (primary and subkey created
+// together, as --quick-generate-key does) or a first line with type P.
+func PrimaryFingerprint(statuses Statuses) (string, bool) {
+	for _, line := range statuses {
+		if line.Keyword != "KEY_CREATED" || len(line.Args) < 2 {
+			continue
+		}
+		if line.Args[0] == "P" || line.Args[0] == "B" {
+			return line.Args[1], true
+		}
+	}
+	return "", false
 }
 
 // NewRunner validates bin (absolute path to an executable file) and returns a Runner.
@@ -121,7 +148,15 @@ func (r *Runner) Bin() string { return r.bin }
 
 // Argv returns the exact argument vector Run will execute.
 func (r *Runner) Argv(c Command) []string {
-	argv := []string{r.bin, "--batch", "--status-fd", statusFD}
+	argv := []string{r.bin}
+	if len(c.answers) > 0 {
+		// Interactive commands cannot use --batch (gpg refuses e.g. --gen-revoke);
+		// --no-tty keeps gpg's informational output off the terminal, since every
+		// prompt is answered via the command fd.
+		argv = append(argv, "--no-tty", "--status-fd", statusFD, "--command-fd", commandFDStr)
+	} else {
+		argv = append(argv, "--batch", "--status-fd", statusFD)
+	}
 	if r.homedir != "" {
 		argv = append(argv, "--homedir", r.homedir)
 	}
@@ -141,8 +176,11 @@ func (r *Runner) Preview(c Command) string {
 // Run executes c. A non-zero gpg exit is reported in Result, not as an error;
 // errors mean gpg could not be run or its output could not be read.
 func (r *Runner) Run(ctx context.Context, c Command) (Result, error) {
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun() // also aborts gpg when the answer feeder meets an unexpected prompt
+
 	argv := r.Argv(c)
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // G204: argv built from typed Commands, no shell
+	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...) //nolint:gosec // G204: argv built from typed Commands, no shell
 	cmd.Env = environWithGPGTTY()
 	cmd.Stdin = c.stdin
 	cmd.WaitDelay = pipeWaitDelay
@@ -162,6 +200,21 @@ func (r *Runner) Run(ctx context.Context, c Command) (Result, error) {
 	}
 	defer statusRead.Close()
 	cmd.ExtraFiles = []*os.File{statusWrite}
+
+	// Commands with scripted answers: gpg reads them from fd 4 (the pipe's read
+	// end); cryptosis writes them to the write end as prompts arrive.
+	var feeder *answerFeeder
+	var commandRead, commandWrite *os.File
+	if len(c.answers) > 0 {
+		commandRead, commandWrite, err = os.Pipe()
+		if err != nil {
+			_ = statusWrite.Close()
+			return Result{}, fmt.Errorf("command pipe: %w", err)
+		}
+		cmd.ExtraFiles = append(cmd.ExtraFiles, commandRead)
+		feeder = newAnswerFeeder(c.answers)
+	}
+
 	// Own process group: the terminal's Ctrl-C goes to cryptosis, which forwards it.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
@@ -172,13 +225,39 @@ func (r *Runner) Run(ctx context.Context, c Command) (Result, error) {
 
 	startErr := cmd.Start()
 	_ = statusWrite.Close() // child holds its own copy; ours must close for EOF
+	if commandRead != nil {
+		_ = commandRead.Close() // child's copy only, so answer writes fail with EPIPE once gpg exits
+	}
 	if startErr != nil {
+		if commandWrite != nil {
+			_ = commandWrite.Close()
+		}
 		return Result{}, fmt.Errorf("start gpg: %w", startErr)
 	}
 
+	observe := func(line StatusLine) { interrupts.observe(line) }
+	if feeder != nil {
+		commandWrite := commandWrite
+		feeder.attach(func(answer string) error {
+			_, err := commandWrite.WriteString(answer)
+			return err
+		}, cancelRun)
+		observe = func(line StatusLine) {
+			interrupts.observe(line)
+			feeder.observe(line)
+		}
+		defer func() {
+			feeder.stop()
+			_ = commandWrite.Close()
+		}()
+	}
+
 	interrupts.forwardTo(cmd.Process)
-	statusCh := readStatus(statusRead, interrupts.observe)
+	statusCh := readStatus(statusRead, observe)
 	waitErr := cmd.Wait()
+	if feeder != nil {
+		feeder.stop()
+	}
 	statuses, statusErr := awaitStatus(statusRead, statusCh)
 
 	result := Result{
@@ -187,7 +266,10 @@ func (r *Runner) Run(ctx context.Context, c Command) (Result, error) {
 		Stdout:   stdout.Bytes(),
 		Stderr:   stderr.Bytes(),
 	}
-	return result, runError(ctx, waitErr, statusErr)
+	if feeder != nil && feeder.unexpectedPrompt() != "" {
+		return result, fmt.Errorf("gpg asked for an unexpected prompt: %s", feeder.unexpectedPrompt())
+	}
+	return result, runError(runCtx, waitErr, statusErr)
 }
 
 func runError(ctx context.Context, waitErr, statusErr error) error {

@@ -50,7 +50,13 @@ func (a *App) printGPGFailure(result gpg.Result) {
 	if len(result.Stderr) > 0 {
 		fmt.Fprintln(a.out, sanitize.Text(string(result.Stderr)))
 	}
+	if result.Status.HasErrorCode(gpg.ErrMissingEnvvar) {
+		fmt.Fprintln(a.out, missingEnvvarHint)
+	}
 }
+
+const missingEnvvarHint = "Hint: pinentry could not start, often because your terminal type has no terminfo entry here\n" +
+	"(e.g. over ssh). Try running cryptosis with TERM=xterm-256color."
 
 func (a *App) askConfirm(title string, defaultValue bool) (bool, error) {
 	confirmed := defaultValue

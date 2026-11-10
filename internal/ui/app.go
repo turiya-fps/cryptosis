@@ -32,7 +32,8 @@ type Startup struct {
 // App holds UI state for one session.
 type App struct {
 	Startup
-	out io.Writer
+	out     io.Writer
+	keyring *keyring // session cache; nil until listed or after a change
 }
 
 // New returns an App writing to out.
@@ -89,6 +90,8 @@ func (a *App) chooseMainMenu() (menuItem, error) {
 
 func (a *App) dispatch(ctx context.Context, choice menuItem) error {
 	switch choice {
+	case menuKeys:
+		return a.runKeys(ctx)
 	case menuGPGInfo:
 		return a.showGPGVersion(ctx)
 	case menuSettings:

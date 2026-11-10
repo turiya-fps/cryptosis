@@ -59,3 +59,19 @@ func (s Statuses) First(keyword string) (StatusLine, bool) {
 	}
 	return StatusLine{}, false
 }
+
+// ErrMissingEnvvar is gpg's GPG_ERR_MISSING_ENVVAR (source 5, code 83), seen
+// when pinentry-curses cannot start because TERM has no terminfo entry.
+const ErrMissingEnvvar = "83886383"
+
+// HasErrorCode reports whether an ERROR or FAILURE line carries the given
+// gpg error code (their last argument, per doc/DETAILS).
+func (s Statuses) HasErrorCode(code string) bool {
+	for _, line := range s {
+		isErrorLine := line.Keyword == "ERROR" || line.Keyword == "FAILURE"
+		if isErrorLine && len(line.Args) > 0 && line.Args[len(line.Args)-1] == code {
+			return true
+		}
+	}
+	return false
+}

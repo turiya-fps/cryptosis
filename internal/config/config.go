@@ -40,11 +40,16 @@ const (
 // Config holds user settings. Command preview/confirmation and --batch are
 // deliberately not configurable.
 type Config struct {
-	GPGPath                   string `json:"gpgPath,omitempty"`
-	Keyserver                 string `json:"keyserver"`
-	ClipboardClearSeconds     int    `json:"clipboardClearSeconds"`
-	KeyAlgo                   string `json:"keyAlgo"`
-	KeyExpiry                 string `json:"keyExpiry"`
+	GPGPath               string `json:"gpgPath,omitempty"`
+	Keyserver             string `json:"keyserver"`
+	ClipboardClearSeconds int    `json:"clipboardClearSeconds"`
+	KeyAlgo               string `json:"keyAlgo"`
+	KeyExpiry             string `json:"keyExpiry"`
+	// Off keeps gpg's behaviour: the generated encryption subkey never expires.
+	SubkeyExpiryMatchesPrimary bool `json:"subkeyExpiryMatchesPrimary"`
+	// Off shows ownertrust from the key listing (gpg's default view), which
+	// gpg 2.2 does not update after --import-ownertrust; on reads the trustdb.
+	OwnertrustFromTrustDB     bool   `json:"ownertrustFromTrustDB"`
 	DefaultSigningKey         string `json:"defaultSigningKey,omitempty"`
 	ArmorFiles                bool   `json:"armorFiles"`
 	AccessibleMode            bool   `json:"accessibleMode"`
