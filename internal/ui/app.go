@@ -13,6 +13,7 @@ import (
 
 	"charm.land/huh/v2"
 
+	"github.com/turiya-fps/cryptosis/internal/clipboard"
 	"github.com/turiya-fps/cryptosis/internal/config"
 	"github.com/turiya-fps/cryptosis/internal/gpg"
 	"github.com/turiya-fps/cryptosis/internal/sanitize"
@@ -32,14 +33,22 @@ type Startup struct {
 // App holds UI state for one session.
 type App struct {
 	Startup
-	out     io.Writer
-	keyring *keyring // session cache; nil until listed or after a change
+	out       io.Writer
+	in        io.Reader          // terminal input for the plaintext viewer
+	clipboard *clipboard.Manager // nil when clipboard support is unavailable
+	keyring   *keyring           // session cache; nil until listed or after a change
 }
 
 // New returns an App writing to out.
 func New(startup Startup, out io.Writer) *App {
 	return &App{Startup: startup, out: out}
 }
+
+// SetInput sets the reader used for full-screen prompts (the main terminal).
+func (a *App) SetInput(in io.Reader) { a.in = in }
+
+// SetClipboard enables clipboard input and output.
+func (a *App) SetClipboard(manager *clipboard.Manager) { a.clipboard = manager }
 
 type menuItem int
 
@@ -92,6 +101,10 @@ func (a *App) dispatch(ctx context.Context, choice menuItem) error {
 	switch choice {
 	case menuKeys:
 		return a.runKeys(ctx)
+	case menuFiles:
+		return a.runFiles(ctx)
+	case menuText:
+		return a.runText(ctx)
 	case menuGPGInfo:
 		return a.showGPGVersion(ctx)
 	case menuSettings:

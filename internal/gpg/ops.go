@@ -112,6 +112,85 @@ func GenRevokeCommand(fpr string, reasonCode int, description string) (Command, 
 	}, nil
 }
 
+// EncryptCommand encrypts (and optionally signs with signFpr) the data fed
+// to stdin. trustAlways adds --trust-model always for this one invocation
+// only, after the user confirmed encryption to unverified keys; the option
+// stays visible in the command preview. armor selects armored output.
+func EncryptCommand(recipients []string, signFpr string, trustAlways, armor bool) Command {
+	options := []string{"--encrypt"}
+	for _, fpr := range recipients {
+		options = append(options, "--recipient", fpr)
+	}
+	if signFpr != "" {
+		options = append(options, "--sign", "--local-user", signFpr)
+	}
+	if trustAlways {
+		options = append(options, "--trust-model", "always")
+	}
+	return Command{label: "Encrypt", options: append(options, armorOption(armor))}
+}
+
+// DecryptCommand decrypts the data fed to stdin, writing plaintext to
+// stdout. It handles encrypted files and inline-signed or encrypted+signed
+// messages alike; any signature is reported on the status stream.
+func DecryptCommand() Command {
+	return Command{label: "Decrypt", options: []string{"--decrypt"}}
+}
+
+// SignMode selects the kind of signature SignCommand creates.
+type SignMode int
+
+const (
+	// SignDetached writes a separate signature file, leaving the input untouched.
+	SignDetached SignMode = iota
+	// SignClearsign keeps the message readable and appends an ASCII signature.
+	SignClearsign
+	// SignInline wraps the input in an OpenPGP signed message.
+	SignInline
+)
+
+// SignCommand signs the data fed to stdin with keyFpr (gpg's default signing
+// key when empty), writing the result to stdout. Clearsign output is always
+// ASCII; the other modes follow the armor flag.
+func SignCommand(mode SignMode, keyFpr string, armor bool) Command {
+	var options []string
+	label := "Sign"
+	switch mode {
+	case SignDetached:
+		options = []string{"--detach-sign"}
+		label = "Create detached signature"
+	case SignClearsign:
+		options = []string{"--clearsign"}
+		label = "Create cleartext signature"
+	case SignInline:
+		options = []string{"--sign"}
+	}
+	if keyFpr != "" {
+		options = append(options, "--local-user", keyFpr)
+	}
+	if mode != SignClearsign {
+		options = append(options, armorOption(armor))
+	}
+	return Command{label: label, options: options}
+}
+
+// VerifyCommand checks the detached signature in signatureFile against
+// dataFile.
+func VerifyCommand(signatureFile, dataFile string) Command {
+	return Command{
+		label:    "Verify",
+		options:  []string{"--verify"},
+		operands: []string{signatureFile, dataFile},
+	}
+}
+
+func armorOption(armor bool) string {
+	if armor {
+		return "--armor"
+	}
+	return "--no-armor"
+}
+
 // VersionCommand prints gpg's version banner.
 func VersionCommand() Command {
 	return Command{label: "Show gpg version", options: []string{"--version"}}

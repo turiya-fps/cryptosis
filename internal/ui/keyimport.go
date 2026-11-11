@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -83,31 +81,7 @@ func (a *App) readImportFile() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return readKeyFile(absolute)
-}
-
-// readKeyFile reads a regular file of at most fetch.MaxBytes.
-func readKeyFile(path string) ([]byte, error) {
-	file, err := os.Open(path) //nolint:gosec // G304: user-chosen file, read only
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a regular file", sanitize.Line(path))
-	}
-	data, err := io.ReadAll(io.LimitReader(file, fetch.MaxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > fetch.MaxBytes {
-		return nil, fmt.Errorf("%s is larger than %d bytes", sanitize.Line(path), fetch.MaxBytes)
-	}
-	return data, nil
+	return readCappedFile(absolute, fetch.MaxBytes)
 }
 
 func (a *App) readImportPaste() ([]byte, error) {

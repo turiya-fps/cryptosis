@@ -38,7 +38,8 @@ func (a *App) exportKey(ctx context.Context, key gpg.Key, secret bool) error {
 		return ignoreAbort(err)
 	}
 	exported := func(result gpg.Result) bool { return result.Status.Has("EXPORTED") }
-	return a.runToFile(ctx, gpg.ExportCommand([]string{key.Fingerprint}, secret, true), output, exported)
+	_, err = a.runToFile(ctx, gpg.ExportCommand([]string{key.Fingerprint}, secret, true), output, exported)
+	return err
 }
 
 func (a *App) changeExpiry(ctx context.Context, key gpg.Key) error {
@@ -134,7 +135,7 @@ func (a *App) createRevocationCertificate(ctx context.Context, key gpg.Key) erro
 	if err != nil || output.dest == "" {
 		return ignoreAbort(err)
 	}
-	if err := a.runToFile(ctx, cmd, output, func(gpg.Result) bool { return true }); err != nil {
+	if _, err := a.runToFile(ctx, cmd, output, func(gpg.Result) bool { return true }); err != nil {
 		return err
 	}
 	fmt.Fprintln(a.out, revocsNote)
@@ -179,55 +180,33 @@ func (a *App) askOutputPath(title, suggestedName string) (outputFile, error) {
 	if cwd, err := os.Getwd(); err == nil {
 		suggested = filepath.Join(cwd, suggestedName)
 	}
-	dest := suggested
-	description := "Empty uses " + sanitize.Line(suggested) + "; ~ is your home directory."
-	titleWithDefault := title + " (empty = " + sanitize.Line(suggested) + ")"
-	if err := a.inputString(titleWithDefault, description, &dest, validatePathOrEmpty); err != nil {
-		return outputFile{}, err
-	}
-	absolute, err := resolvePath(orDefault(dest, suggested))
-	if err != nil {
-		return outputFile{}, err
-	}
-	exists, err := fsout.Exists(absolute)
-	if err != nil {
-		return outputFile{}, err
-	}
-	if !exists {
-		return outputFile{dest: absolute}, nil
-	}
-	overwrite, err := a.askConfirm(fmt.Sprintf("%s exists. Replace it?", sanitize.Line(absolute)), false)
-	if err != nil || !overwrite {
-		fmt.Fprintln(a.out, "Cancelled.")
-		return outputFile{}, err
-	}
-	return outputFile{dest: absolute, overwrite: true}, nil
+	return a.askOutputFilePath(title, suggested)
 }
 
 // runToFile runs cmd with stdout going to a temp file that replaces the
 // destination only if gpg succeeded and wrote something.
-func (a *App) runToFile(ctx context.Context, cmd gpg.Command, output outputFile, succeeded func(gpg.Result) bool) error {
+func (a *App) runToFile(ctx context.Context, cmd gpg.Command, output outputFile, succeeded func(gpg.Result) bool) (gpg.Result, error) {
 	out, err := fsout.Create(output.dest)
 	if err != nil {
-		return err
+		return gpg.Result{}, err
 	}
 	fmt.Fprintf(a.out, "\nOutput file: %s", sanitize.Line(output.dest))
 	result, ran, err := a.confirmAndRun(ctx, cmd.WithStdout(out.Writer()))
 	if err != nil || !ran || result.ExitCode != 0 {
-		return errors.Join(err, out.Abort())
+		return result, errors.Join(err, out.Abort())
 	}
 	if !succeeded(result) || !hasContent(out.Writer()) {
 		fmt.Fprintln(a.out, "gpg wrote nothing; no file was created.")
-		return errors.Join(errGPGFailed, out.Abort())
+		return result, errors.Join(errGPGFailed, out.Abort())
 	}
 	if err := out.Commit(output.overwrite); err != nil {
 		if errors.Is(err, fsout.ErrExists) {
-			return fmt.Errorf("%s appeared meanwhile; not replaced", sanitize.Line(output.dest))
+			return result, fmt.Errorf("%s appeared meanwhile; not replaced", sanitize.Line(output.dest))
 		}
-		return err
+		return result, err
 	}
 	fmt.Fprintf(a.out, "Wrote %s\n", sanitize.Line(output.dest))
-	return nil
+	return result, nil
 }
 
 func hasContent(file *os.File) bool {

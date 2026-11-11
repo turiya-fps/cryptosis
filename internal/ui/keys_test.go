@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/turiya-fps/cryptosis/internal/config"
+	"github.com/turiya-fps/cryptosis/internal/fetch"
 	"github.com/turiya-fps/cryptosis/internal/gpg"
 	"github.com/turiya-fps/cryptosis/internal/gpgtest"
 )
@@ -147,8 +148,8 @@ func TestResolvePathExpandsHome(t *testing.T) {
 	}
 }
 
-func TestReadKeyFileRejectsDirectories(t *testing.T) {
-	if _, err := readKeyFile(t.TempDir()); err == nil {
+func TestReadCappedFileRejectsDirectories(t *testing.T) {
+	if _, err := readCappedFile(t.TempDir(), fetch.MaxBytes); err == nil {
 		t.Error("directory accepted as key file")
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/turiya-fps/cryptosis/internal/clipboard"
 	"github.com/turiya-fps/cryptosis/internal/config"
 	"github.com/turiya-fps/cryptosis/internal/gpg"
 	"github.com/turiya-fps/cryptosis/internal/sanitize"
@@ -36,11 +37,16 @@ func run() int {
 	}
 
 	ctx := context.Background()
-	startup, err := detectStartup(ctx)
+	start, err := detectStartup(ctx)
 	if err != nil {
 		return fail(err)
 	}
-	if err := ui.New(startup, os.Stdout).Run(ctx); err != nil {
+	manager := clipboard.NewManager()
+	defer manager.Flush() // clear anything still pending at exit
+	app := ui.New(start, os.Stdout)
+	app.SetInput(os.Stdin)
+	app.SetClipboard(manager)
+	if err := app.Run(ctx); err != nil {
 		return fail(err)
 	}
 	return 0
