@@ -30,6 +30,15 @@ func run() int {
 		return fail(fmt.Errorf("disable core dumps: %w", err))
 	}
 
+	switch args := os.Args[1:]; {
+	case len(args) == 0:
+	case len(args) == 1 && args[0] == "--version":
+		fmt.Println("cryptosis " + version)
+		return 0
+	default:
+		return fail(errors.New("usage: cryptosis [--version]"))
+	}
+
 	// huh prompts treat EOF as "accept the default", so piped input is unsafe.
 	isInteractive := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 	if !isInteractive {

@@ -1,0 +1,68 @@
+# Release build: linux/darwin × amd64/arm64, reproducible, cosign-signed checksums.
+# Run by .github/workflows/release.yml on v* tags; validated on every push by ci.yml.
+# Local check (no install): go run github.com/goreleaser/goreleaser/v2@v2.20.1 check
+version: 2
+
+project_name: cryptosis
+
+# Build from the module proxy's copy of the tagged source, not the checkout.
+gomod:
+  proxy: true
+
+builds:
+  - main: ./cmd/cryptosis
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    # Reproducible: no build paths, file times from the commit.
+    flags: [-trimpath]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Fixed metadata: identical archives on any machine, no builder user names.
+    builds_info: &info
+      owner: root
+      group: root
+      mtime: "{{ .CommitDate }}"
+    files:
+      - src: LICENSE
+        info:
+          <<: *info
+          mode: 0644
+      - src: README.md
+        info:
+          <<: *info
+          mode: 0644
+
+checksum:
+  name_template: checksums.txt
+
+# Keyless (GitHub OIDC) signature over checksums.txt, which covers every archive.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args: [sign-blob, "--bundle=${signature}", "${artifact}", --yes]
+    artifacts: checksum
+    output: true
+
+changelog:
+  use: github
+  sort: asc
+
+release:
+  footer: |
+    ## Verify
+
+    ```sh
+    sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt
+    cosign verify-blob --bundle checksums.txt.sigstore.json \
+      --certificate-identity "https://github.com/turiya-fps/cryptosis/.github/workflows/release.yml@refs/tags/{{ .Tag }}" \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      checksums.txt
+    gh attestation verify --repo turiya-fps/cryptosis cryptosis_{{ .Version }}_<os>_<arch>.tar.gz
+    ```
