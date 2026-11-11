@@ -6,6 +6,7 @@ import "strconv"
 // line (gnupg doc/DETAILS, "Import/Export").
 type ImportSummary struct {
 	Count          int // keys read
+	NoUserID       int // keys skipped for lacking a user ID
 	Imported       int // entirely new keys
 	Unchanged      int // keys already present without changes
 	NewUIDs        int
@@ -35,6 +36,7 @@ func ParseImportSummary(statuses Statuses) (ImportSummary, bool) {
 	}
 	return ImportSummary{
 		Count:          field(0),
+		NoUserID:       field(1),
 		Imported:       field(2),
 		Unchanged:      field(4),
 		NewUIDs:        field(5),

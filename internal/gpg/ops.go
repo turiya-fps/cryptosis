@@ -95,6 +95,35 @@ func ImportCommand() Command {
 	return Command{label: "Import keys", options: []string{"--import"}}
 }
 
+// ImportPreviewKeepUIDCommand previews an import that keeps only user IDs
+// whose email address matches email (used for WKD, where the draft requires
+// clients to drop every other UID of a fetched key).
+func ImportPreviewKeepUIDCommand(email string) Command {
+	return Command{
+		label:   "Preview keys to import",
+		options: []string{"--with-colons", "--import-options", "show-only", "--import-filter", "keep-uid=mbox=" + email, "--import"},
+	}
+}
+
+// ImportKeepUIDCommand imports keys from stdin keeping only user IDs whose
+// email address matches email.
+func ImportKeepUIDCommand(email string) Command {
+	return Command{
+		label:   "Import keys",
+		options: []string{"--import-filter", "keep-uid=mbox=" + email, "--import"},
+	}
+}
+
+// SendKeysCommand publishes the given public keys (by fingerprint) to the
+// keyserver at url, via gpg's dirmngr.
+func SendKeysCommand(fprs []string, url string) Command {
+	return Command{
+		label:    "Publish public key (send-keys)",
+		options:  []string{"--keyserver", url, "--send-keys"},
+		operands: fprs,
+	}
+}
+
 // GenRevokeCommand writes an ASCII-armored revocation certificate for fpr to
 // stdout. It runs without --batch (gpg refuses --gen-revoke in batch mode),
 // answering gpg's prompts from the status stream; reasonCode is one of the

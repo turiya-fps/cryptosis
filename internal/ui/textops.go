@@ -205,7 +205,7 @@ func (a *App) decryptText(ctx context.Context) error {
 		return errGPGFailed
 	}
 	fmt.Fprintln(a.out, "Signatures:")
-	a.printSignatures(result.Status)
+	a.reportSignatures(ctx, result.Status)
 	return a.deliverText(string(result.Stdout), "Decrypted text:")
 }
 

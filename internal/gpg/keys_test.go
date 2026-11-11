@@ -134,14 +134,14 @@ func TestImportPreviewThenImportSameBytes(t *testing.T) {
 }
 
 func TestImportSummaryParsesIMPORTRESFields(t *testing.T) {
-	statuses := ParseStatus([]byte("[GNUPG:] IMPORT_RES 3 0 2 0 1 1 2 4 0 1 1 0 0 0 0\n"))
+	statuses := ParseStatus([]byte("[GNUPG:] IMPORT_RES 3 5 2 0 1 1 2 4 0 1 1 0 0 0 0\n"))
 
 	summary, ok := ParseImportSummary(statuses)
 
 	if !ok {
 		t.Fatal("no IMPORT_RES")
 	}
-	want := ImportSummary{Count: 3, Imported: 2, Unchanged: 1, NewUIDs: 1, NewSubkeys: 2, NewSignatures: 4, SecretRead: 1, SecretImported: 1}
+	want := ImportSummary{Count: 3, NoUserID: 5, Imported: 2, Unchanged: 1, NewUIDs: 1, NewSubkeys: 2, NewSignatures: 4, SecretRead: 1, SecretImported: 1}
 	if summary != want {
 		t.Errorf("summary = %+v, want %+v", summary, want)
 	}

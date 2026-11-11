@@ -132,7 +132,13 @@ func (a *App) readImportURL(ctx context.Context) ([]byte, error) {
 
 // previewImport lists what the data would import without touching the keyring.
 func (a *App) previewImport(ctx context.Context, data []byte) ([]gpg.Key, error) {
-	preview, err := a.runReadOnly(ctx, gpg.ImportPreviewCommand().WithStdin(bytes.NewReader(data)))
+	return a.previewImportCommand(ctx, gpg.ImportPreviewCommand(), data)
+}
+
+// previewImportCommand is previewImport with the import command chosen by the
+// caller (e.g. a keep-uid variant); the command must be a show-only import.
+func (a *App) previewImportCommand(ctx context.Context, cmd gpg.Command, data []byte) ([]gpg.Key, error) {
+	preview, err := a.runReadOnly(ctx, cmd.WithStdin(bytes.NewReader(data)))
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +175,12 @@ func containsSecretKey(keys []gpg.Key) bool {
 }
 
 func (a *App) runImport(ctx context.Context, data []byte, previewed []gpg.Key) error {
-	result, ran, err := a.confirmAndRun(ctx, gpg.ImportCommand().WithStdin(bytes.NewReader(data)))
+	return a.runImportCommand(ctx, gpg.ImportCommand(), data, previewed)
+}
+
+// runImportCommand is runImport with the import command chosen by the caller.
+func (a *App) runImportCommand(ctx context.Context, cmd gpg.Command, data []byte, previewed []gpg.Key) error {
+	result, ran, err := a.confirmAndRun(ctx, cmd.WithStdin(bytes.NewReader(data)))
 	if ran {
 		a.invalidateKeyring()
 	}
@@ -210,6 +221,9 @@ func (a *App) printImportResult(statuses gpg.Statuses, previewed []gpg.Key) {
 	}
 	if summary.NotImported > 0 {
 		fmt.Fprintf(a.out, ", %d not imported", summary.NotImported)
+	}
+	if summary.NoUserID > 0 {
+		fmt.Fprintf(a.out, ", %d skipped (no user ID)", summary.NoUserID)
 	}
 	fmt.Fprintln(a.out)
 }

@@ -128,7 +128,7 @@ func (a *App) decryptFile(ctx context.Context) error {
 		return err
 	}
 	fmt.Fprintln(a.out, "Signatures:")
-	a.printSignatures(result.Status)
+	a.reportSignatures(ctx, result.Status)
 	return nil
 }
 
@@ -227,7 +227,7 @@ func (a *App) verifyDetached(ctx context.Context, sigPath, dataPath string) erro
 		return err
 	}
 	fmt.Fprintln(a.out, "Signatures:")
-	a.printSignatures(result.Status)
+	a.reportSignatures(ctx, result.Status)
 	if result.ExitCode != 0 {
 		return errGPGFailed
 	}
@@ -260,7 +260,7 @@ func (a *App) verifyClearsigned(ctx context.Context, input string) error {
 		return errors.Join(err, out.Abort())
 	}
 	fmt.Fprintln(a.out, "Signatures:")
-	a.printSignatures(result.Status)
+	a.reportSignatures(ctx, result.Status)
 
 	switch {
 	case result.ExitCode == 0:

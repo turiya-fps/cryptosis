@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/turiya-fps/cryptosis/internal/gpg"
@@ -9,14 +10,40 @@ import (
 
 // printSignatures reports every signature gpg verified for one operation.
 // Signature data (user IDs especially) is untrusted and sanitized here.
-func (a *App) printSignatures(statuses gpg.Statuses) {
+func (a *App) printSignatures(statuses gpg.Statuses) []gpg.Signature {
 	signatures := gpg.ParseSignatures(statuses)
 	if len(signatures) == 0 {
 		fmt.Fprintln(a.out, "Not signed.")
-		return
+		return signatures
 	}
 	for _, sig := range signatures {
 		a.printSignature(sig)
+	}
+	return signatures
+}
+
+// reportSignatures prints the signature report and, when a signer's key is
+// missing, offers to fetch it from the keyserver.
+func (a *App) reportSignatures(ctx context.Context, statuses gpg.Statuses) {
+	signatures := a.printSignatures(statuses)
+	for _, sig := range signatures {
+		if !sig.ErrNoPubKey {
+			continue
+		}
+		query := sig.KeyID
+		if sig.Fingerprint != "" {
+			query = sig.Fingerprint
+		}
+		fmt.Fprintln(a.out)
+		fetch, err := a.askConfirm(fmt.Sprintf("Fetch key %s from %s?", sanitize.Line(groupFingerprint(query)), sanitize.Line(a.Config.Keyserver)), true)
+		if err != nil || !fetch {
+			return
+		}
+		if err := a.fetchKeyByFingerprint(ctx, query); err != nil {
+			a.printError(err)
+		}
+		fmt.Fprintln(a.out, "Run the operation again to see the signature result.")
+		return
 	}
 }
 
@@ -30,7 +57,7 @@ func (a *App) printSignature(sig gpg.Signature) {
 	case gpg.SigError:
 		if sig.ErrNoPubKey {
 			fmt.Fprintf(a.out, "Signature NOT verified: key %s is not in your keyring\n", sanitize.Line(sig.KeyID))
-			fmt.Fprintln(a.out, "  Import the signer's public key (Keys → Import, or the keyserver menu) and verify again.")
+			fmt.Fprintln(a.out, "  The signer's public key can be fetched below.")
 		} else {
 			fmt.Fprintf(a.out, "Signature NOT verified: gpg error %s for key %s\n", sanitize.Line(sig.ErrorCode), sanitize.Line(sig.KeyID))
 		}

@@ -105,6 +105,8 @@ func (a *App) dispatch(ctx context.Context, choice menuItem) error {
 		return a.runFiles(ctx)
 	case menuText:
 		return a.runText(ctx)
+	case menuKeyserver:
+		return a.runKeyserver(ctx)
 	case menuGPGInfo:
 		return a.showGPGVersion(ctx)
 	case menuSettings:

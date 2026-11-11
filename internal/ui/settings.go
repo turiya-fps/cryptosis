@@ -125,8 +125,13 @@ func (a *App) saveConfig(updated config.Config) error {
 	return nil
 }
 
+// inputString asks for one line of text; validate may be nil (huh's
+// accessible mode calls the validator unconditionally).
 func (a *App) inputString(title, description string, value *string, validate func(string) error) error {
-	field := huh.NewInput().Title(title).Description(description).Value(value).Validate(validate)
+	field := huh.NewInput().Title(title).Description(description).Value(value)
+	if validate != nil {
+		field = field.Validate(validate)
+	}
 	err := a.newForm(huh.NewGroup(field)).Run()
 	*value = strings.TrimSpace(*value)
 	return err

@@ -3,6 +3,7 @@
 package fetch
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +22,14 @@ const (
 
 // ErrTooLarge is returned when the response body exceeds MaxBytes.
 var ErrTooLarge = fmt.Errorf("download larger than %d bytes", MaxBytes)
+
+// StatusError reports a non-200 answer from the server.
+type StatusError struct {
+	Code   int
+	Status string
+}
+
+func (e *StatusError) Error() string { return "server answered " + e.Status }
 
 // Client fetches HTTPS URLs.
 type Client struct {
@@ -51,13 +60,26 @@ func ValidateURL(raw string) (*url.URL, error) {
 
 // Get downloads rawURL and returns the body.
 func (c *Client) Get(ctx context.Context, rawURL string) ([]byte, error) {
+	return c.do(ctx, http.MethodGet, rawURL, "", nil)
+}
+
+// Post uploads body to rawURL and returns the response body. Redirects must
+// preserve the method and stay on HTTPS.
+func (c *Client) Post(ctx context.Context, rawURL, contentType string, body []byte) ([]byte, error) {
+	return c.do(ctx, http.MethodPost, rawURL, contentType, bytes.NewReader(body))
+}
+
+func (c *Client) do(ctx context.Context, method, rawURL, contentType string, body io.Reader) ([]byte, error) {
 	parsed, err := ValidateURL(rawURL)
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, method, parsed.String(), body)
 	if err != nil {
 		return nil, err
+	}
+	if contentType != "" {
+		request.Header.Set("Content-Type", contentType)
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
@@ -65,7 +87,7 @@ func (c *Client) Get(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server answered %s", response.Status)
+		return nil, &StatusError{Code: response.StatusCode, Status: response.Status}
 	}
 	return readCapped(response.Body)
 }
