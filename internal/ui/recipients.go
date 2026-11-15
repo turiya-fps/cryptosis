@@ -137,12 +137,7 @@ func (a *App) pickRecipients(candidates []recipient) ([]recipient, error) {
 		options = append(options, huh.NewOption(recipientLabel(entry), entry.key.Fingerprint))
 	}
 	var selectedFprs []string
-	picker := huh.NewMultiSelect[string]().
-		Title("Recipients (space to mark, / to filter)").
-		Options(options...).
-		Height(min(len(options)+4, 15)).
-		Value(&selectedFprs)
-	if err := a.newForm(huh.NewGroup(picker)).Run(); err != nil {
+	if err := a.newForm(huh.NewGroup(newRecipientPicker(options, &selectedFprs))).Run(); err != nil {
 		return nil, err
 	}
 	selected := make([]recipient, 0, len(selectedFprs))
@@ -150,6 +145,24 @@ func (a *App) pickRecipients(candidates []recipient) ([]recipient, error) {
 		selected = append(selected, byFingerprint[fpr])
 	}
 	return selected, nil
+}
+
+// errNoRecipient keeps Enter on an unmarked picker from silently cancelling:
+// Enter submits the marked keys, not the highlighted one.
+var errNoRecipient = errors.New("mark at least one key with space or x (Ctrl-C to cancel)")
+
+func newRecipientPicker(options []huh.Option[string], selected *[]string) *huh.MultiSelect[string] {
+	return huh.NewMultiSelect[string]().
+		Title("Recipients (space to mark, / to filter)").
+		Options(options...).
+		Height(min(len(options)+4, 15)).
+		Validate(func(fprs []string) error {
+			if len(fprs) == 0 {
+				return errNoRecipient
+			}
+			return nil
+		}).
+		Value(selected)
 }
 
 func recipientLabel(entry recipient) string {

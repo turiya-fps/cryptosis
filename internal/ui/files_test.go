@@ -2,10 +2,14 @@ package ui
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 
 	"github.com/turiya-fps/cryptosis/internal/config"
 	"github.com/turiya-fps/cryptosis/internal/gpg"
@@ -120,6 +124,26 @@ func TestResolveUnverifiedRefusesWithoutSetting(t *testing.T) {
 	printed := out.String()
 	if !strings.Contains(printed, "no assurance") || !strings.Contains(printed, "Allow unverified recipients") {
 		t.Errorf("refusal message incomplete:\n%s", printed)
+	}
+}
+
+func TestRecipientPickerRejectsEmptySelection(t *testing.T) {
+	var selected []string
+	picker := newRecipientPicker([]huh.Option[string]{huh.NewOption("Alice", "FPR-A")}, &selected)
+	picker.WithKeyMap(huh.NewDefaultKeyMap()) // normally set by the form
+	picker.Focus()
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+
+	if _, cmd := picker.Update(enter); cmd != nil || !errors.Is(picker.Error(), errNoRecipient) {
+		t.Fatalf("Enter with nothing marked: cmd=%v err=%v, want blocked with errNoRecipient", cmd, picker.Error())
+	}
+
+	picker.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if _, cmd := picker.Update(enter); cmd == nil || picker.Error() != nil {
+		t.Fatalf("Enter after marking: cmd=%v err=%v, want submit", cmd, picker.Error())
+	}
+	if len(selected) != 1 || selected[0] != "FPR-A" {
+		t.Errorf("selected = %v, want [FPR-A]", selected)
 	}
 }
 
