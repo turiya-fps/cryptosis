@@ -38,6 +38,7 @@ func TestSaveThenLoadRoundTrips(t *testing.T) {
 	saved.ClipboardClearSeconds = 30
 	saved.AllowUnverifiedRecipients = true
 	saved.DefaultSigningKey = "BB11B7DC4D321FCCFB1212E7438F68FF5D06DB72"
+	saved.PGPDir = "/home/user/pgp"
 
 	if err := Save(path, saved); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -84,6 +85,8 @@ func TestLoadRejectsBadContent(t *testing.T) {
 		"trailing data":   `{} {}`,
 		"http keyserver":  `{"keyserver": "http://keys.openpgp.org"}`,
 		"relative gpg":    `{"gpgPath": "bin/gpg"}`,
+		"relative pgpDir": `{"pgpDir": "pgp"}`,
+		"tilde pgpDir":    `{"pgpDir": "~/pgp"}`,
 		"bad expiry":      `{"keyExpiry": "2y; rm"}`,
 		"bad algo":        `{"keyAlgo": "rsa1024"}`,
 		"short key id":    `{"defaultSigningKey": "5D06DB72"}`,

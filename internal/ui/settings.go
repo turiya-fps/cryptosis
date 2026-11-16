@@ -3,6 +3,8 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"strconv"
 	"strings"
 
@@ -27,6 +29,7 @@ const (
 	settingArmorFiles
 	settingAccessible
 	settingUnverifiedRecipients
+	settingPGPDir
 	settingReset
 	settingBack
 )
@@ -70,6 +73,7 @@ func (a *App) chooseSetting() (settingID, error) {
 		huh.NewOption("Armor (.asc) file output: "+onOff(c.ArmorFiles), settingArmorFiles),
 		huh.NewOption("Accessible mode: "+onOff(c.AccessibleMode), settingAccessible),
 		huh.NewOption("Allow unverified recipients: "+onOff(c.AllowUnverifiedRecipients), settingUnverifiedRecipients),
+		huh.NewOption("PGP file directory: "+orDefault(c.PGPDir, "not set"), settingPGPDir),
 		huh.NewOption("Reset all to defaults", settingReset),
 		huh.NewOption("Back", settingBack),
 	}
@@ -110,6 +114,8 @@ func (a *App) editSetting(id settingID) (config.Config, bool, error) {
 		updated.AccessibleMode, err = a.askConfirm("Use accessible mode (plain prompts, screen-reader friendly)?", updated.AccessibleMode)
 	case settingUnverifiedRecipients:
 		updated.AllowUnverifiedRecipients, err = a.confirmUnverifiedRecipients(updated.AllowUnverifiedRecipients)
+	case settingPGPDir:
+		updated.PGPDir, err = a.inputPGPDir(updated.PGPDir)
 	case settingReset:
 		updated, err = a.confirmReset()
 	}
@@ -207,6 +213,40 @@ func validateGPGPath(v string) error {
 	}
 	_, err := gpg.NewRunner(path, "")
 	return err
+}
+
+// inputPGPDir asks for the PGP file directory and returns it resolved to an
+// absolute path ("" clears the setting).
+func (a *App) inputPGPDir(current string) (string, error) {
+	value := current
+	if err := a.inputString("PGP file directory", "Browsed by Text & clipboard; ~ is your home directory. Empty clears it.", &value, validatePGPDirOrEmpty); err != nil {
+		return current, err
+	}
+	if value == "" {
+		return "", nil
+	}
+	return resolvePath(value)
+}
+
+func validatePGPDirOrEmpty(v string) error {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	path, err := resolvePath(v)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%s does not exist", sanitize.Line(path))
+	}
+	if err != nil {
+		return errors.New(sanitize.Line(err.Error())) // *PathError already names the path
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", sanitize.Line(path))
+	}
+	return nil
 }
 
 func validateFingerprintOrEmpty(v string) error {

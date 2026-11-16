@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"charm.land/huh/v2"
 
+	"github.com/turiya-fps/cryptosis/internal/dirlist"
 	"github.com/turiya-fps/cryptosis/internal/fetch"
 	"github.com/turiya-fps/cryptosis/internal/fsout"
 	"github.com/turiya-fps/cryptosis/internal/gpg"
@@ -78,6 +80,7 @@ const (
 	textFromClipboard
 	textFromFile
 	textFromBack
+	textFromBrowse
 )
 
 // readText asks where the text comes from and reads it. nil means back.
@@ -90,39 +93,74 @@ func (a *App) readText(requireArmored bool) ([]byte, error) {
 	if a.clipboard != nil {
 		options = append(options, huh.NewOption("Clipboard", textFromClipboard))
 	}
-	options = append(options, huh.NewOption("File", textFromFile), huh.NewOption("Back", textFromBack))
-
-	source := textFromPaste
-	menu := huh.NewSelect[textSource]().Title("Text comes from").Options(options...).Value(&source)
-	if err := a.newForm(huh.NewGroup(menu)).Run(); err != nil {
-		return nil, err
+	browseLabel := "Browse PGP directory (not set)"
+	if a.Config.PGPDir != "" {
+		browseLabel = "Browse " + abbreviateHome(a.Config.PGPDir)
 	}
+	options = append(options,
+		huh.NewOption("File", textFromFile),
+		huh.NewOption(browseLabel, textFromBrowse),
+		huh.NewOption("Back", textFromBack))
 
-	var data []byte
-	var err error
-	switch source {
-	case textFromPaste:
-		data, err = a.readTextPaste(requireArmored)
-	case textFromClipboard:
-		var text string
-		text, err = a.clipboard.Read()
-		if err == nil && requireArmored {
-			err = validatePGPMessage(text)
+	for {
+		source := textFromPaste
+		menu := huh.NewSelect[textSource]().Title("Text comes from").Options(options...).Value(&source)
+		if err := a.newForm(huh.NewGroup(menu)).Run(); err != nil {
+			return nil, err
 		}
-		data = []byte(text)
-	case textFromFile:
-		data, err = a.readTextFile(requireArmored)
-	default:
-		return nil, nil
+		var data []byte
+		var err error
+		switch source {
+		case textFromPaste:
+			data, err = a.readTextPaste(requireArmored)
+		case textFromClipboard:
+			var text string
+			text, err = a.clipboard.Read()
+			if err == nil && requireArmored {
+				err = validatePGPMessage(text)
+			}
+			data = []byte(text)
+		case textFromFile:
+			data, err = a.readTextFile(requireArmored)
+		case textFromBrowse:
+			var browsed bool
+			data, browsed, err = a.readBrowsedText(requireArmored)
+			if err == nil && !browsed {
+				continue // back to "Text comes from"
+			}
+		default:
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(data) == 0 {
+			fmt.Fprintln(a.out, "No text.")
+			return nil, nil
+		}
+		return data, nil
 	}
+}
+
+// readBrowsedText reads a file picked under the PGP directory; picked is
+// false when the user left the browser without choosing one.
+func (a *App) readBrowsedText(requireArmored bool) (data []byte, picked bool, err error) {
+	mode := browseEncrypt
+	if requireArmored {
+		mode = browseDecrypt
+	}
+	path, err := a.browsePGPDir(mode)
+	if err != nil || path == "" {
+		return nil, false, err
+	}
+	data, err = dirlist.ReadFile(path, fetch.MaxBytes)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	if len(data) == 0 {
-		fmt.Fprintln(a.out, "No text.")
-		return nil, nil
+	if requireArmored && gpg.DetectArmor(data) != gpg.ArmorMessage { // file changed since listing
+		return nil, true, errors.New("the file no longer contains an ASCII-armored PGP message")
 	}
-	return data, nil
+	return data, true, nil
 }
 
 func (a *App) readTextPaste(requireArmored bool) ([]byte, error) {
@@ -260,7 +298,13 @@ func (a *App) copyToClipboard(text string) error {
 }
 
 func (a *App) saveTextFile(text string) error {
-	output, err := a.askOutputPath("Save text to", "message.txt")
+	var output outputFile
+	var err error
+	if a.Config.PGPDir != "" {
+		output, err = a.askOutputFilePath("Save text to", filepath.Join(a.Config.PGPDir, "message.txt"))
+	} else {
+		output, err = a.askOutputPath("Save text to", "message.txt")
+	}
 	if err != nil || output.dest == "" {
 		return ignoreAbort(err)
 	}
