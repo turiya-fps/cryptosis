@@ -54,6 +54,9 @@ type Config struct {
 	ArmorFiles                bool   `json:"armorFiles"`
 	AccessibleMode            bool   `json:"accessibleMode"`
 	AllowUnverifiedRecipients bool   `json:"allowUnverifiedRecipients"`
+	// Absolute directory browsed by Text & clipboard and suggested for saving
+	// text; empty = not set. Its existence is checked when used, not on load.
+	PGPDir string `json:"pgpDir,omitempty"`
 }
 
 // Default returns the built-in settings.
@@ -72,6 +75,9 @@ var keyExpiryPattern = regexp.MustCompile(`^(never|[1-9][0-9]{0,3}[dwmy])$`)
 func (c Config) Validate() error {
 	if c.GPGPath != "" && !filepath.IsAbs(c.GPGPath) {
 		return fmt.Errorf("gpgPath must be an absolute path: %q", c.GPGPath)
+	}
+	if c.PGPDir != "" && !filepath.IsAbs(c.PGPDir) {
+		return fmt.Errorf("pgpDir must be an absolute path: %q", c.PGPDir)
 	}
 	if err := validateKeyserver(c.Keyserver); err != nil {
 		return err

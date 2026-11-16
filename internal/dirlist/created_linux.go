@@ -17,7 +17,7 @@ func created(file *os.File, _ os.FileInfo) time.Time {
 	var stat unix.Statx_t
 	var statErr error
 	err = conn.Control(func(fd uintptr) {
-		statErr = unix.Statx(int(fd), "", unix.AT_EMPTY_PATH, unix.STATX_BTIME, &stat) //nolint:gosec // G115: file descriptors fit in int
+		statErr = unix.Statx(int(fd), "", unix.AT_EMPTY_PATH, unix.STATX_BTIME, &stat)
 	})
 	if err != nil || statErr != nil || stat.Mask&unix.STATX_BTIME == 0 {
 		return time.Time{}
