@@ -149,7 +149,7 @@ func classify(head []byte, truncated bool) Kind {
 	if truncated {
 		head = trimPartialRune(head)
 	}
-	if utf8.Valid(head) && !bytes.Contains(head, []byte{0}) {
+	if IsText(head) {
 		return Text
 	}
 	return Binary
@@ -187,23 +187,20 @@ func openRegular(path string) (*os.File, os.FileInfo, error) {
 	return file, info, nil
 }
 
-// ReadFile reads a file chosen in the browser, refusing symlinks and
-// non-regular files and anything over maxBytes.
-func ReadFile(path string, maxBytes int64) ([]byte, error) {
-	file, _, err := openRegular(path)
+// Open opens a file for reading, refusing symlinks and non-regular files, and
+// returns it with its fstat info, so size checks and reads see the same file.
+func Open(path string) (*os.File, os.FileInfo, error) {
+	file, info, err := openRegular(path)
 	if err != nil {
 		if errors.Is(err, syscall.ELOOP) {
 			err = errNotRegular
 		}
-		return nil, fmt.Errorf("%s: %w", sanitize.Line(path), err)
+		return nil, nil, fmt.Errorf("%s: %w", sanitize.Line(path), err)
 	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("%s is larger than %d bytes", sanitize.Line(path), maxBytes)
-	}
-	return data, nil
+	return file, info, nil
+}
+
+// IsText reports whether b is valid UTF-8 without NUL bytes.
+func IsText(b []byte) bool {
+	return utf8.Valid(b) && !bytes.Contains(b, []byte{0})
 }

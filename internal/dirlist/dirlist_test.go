@@ -136,7 +136,7 @@ func TestClassifyTextCutMidRune(t *testing.T) {
 	}
 }
 
-func TestReadFile(t *testing.T) {
+func TestOpen(t *testing.T) {
 	dir := t.TempDir()
 	text := writeFile(t, dir, "plain", "hello", 0)
 	link := filepath.Join(dir, "link")
@@ -148,15 +148,25 @@ func TestReadFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if data, err := ReadFile(text, 100); err != nil || string(data) != "hello" {
-		t.Errorf("regular: %q, %v", data, err)
+	file, info, err := Open(text)
+	if err != nil {
+		t.Fatalf("regular: %v", err)
 	}
-	if _, err := ReadFile(text, 4); err == nil || !strings.Contains(err.Error(), "larger than") {
-		t.Errorf("over cap: err = %v", err)
+	defer file.Close()
+	if info.Size() != 5 {
+		t.Errorf("size = %d, want 5", info.Size())
 	}
 	for _, path := range []string{link, fifo} { // a FIFO must not block
-		if _, err := ReadFile(path, 100); !errors.Is(err, errNotRegular) {
+		if _, _, err := Open(path); !errors.Is(err, errNotRegular) {
 			t.Errorf("%s: err = %v, want errNotRegular", filepath.Base(path), err)
+		}
+	}
+}
+
+func TestIsText(t *testing.T) {
+	for input, want := range map[string]bool{"": true, "héllo\n": true, "a\x00b": false, "\xff\xfe": false} {
+		if got := IsText([]byte(input)); got != want {
+			t.Errorf("IsText(%q) = %v, want %v", input, got, want)
 		}
 	}
 }

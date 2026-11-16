@@ -54,8 +54,8 @@ type menuItem int
 
 const (
 	menuKeys menuItem = iota
-	menuFiles
-	menuText
+	menuCrypt
+	menuSignVerify
 	menuKeyserver
 	menuGPGInfo
 	menuSettings
@@ -85,8 +85,8 @@ func (a *App) chooseMainMenu() (menuItem, error) {
 		Title("cryptosis").
 		Options(
 			huh.NewOption("Keys", menuKeys),
-			huh.NewOption("Files: encrypt, decrypt, sign, verify", menuFiles),
-			huh.NewOption("Text & clipboard", menuText),
+			huh.NewOption("Encrypt & decrypt", menuCrypt),
+			huh.NewOption("Sign & verify", menuSignVerify),
 			huh.NewOption("Keyserver / WKD", menuKeyserver),
 			huh.NewOption("gpg version", menuGPGInfo),
 			huh.NewOption("Settings", menuSettings),
@@ -101,10 +101,10 @@ func (a *App) dispatch(ctx context.Context, choice menuItem) error {
 	switch choice {
 	case menuKeys:
 		return a.runKeys(ctx)
-	case menuFiles:
+	case menuCrypt:
+		return a.runCrypt(ctx)
+	case menuSignVerify:
 		return a.runFiles(ctx)
-	case menuText:
-		return a.runText(ctx)
 	case menuKeyserver:
 		return a.runKeyserver(ctx)
 	case menuGPGInfo:
