@@ -54,8 +54,9 @@ type Config struct {
 	ArmorFiles                bool   `json:"armorFiles"`
 	AccessibleMode            bool   `json:"accessibleMode"`
 	AllowUnverifiedRecipients bool   `json:"allowUnverifiedRecipients"`
-	// Absolute directory browsed by Text & clipboard and suggested for saving
-	// text; empty = not set. Its existence is checked when used, not on load.
+	// Absolute directory browsed by Encrypt & decrypt and suggested for exports
+	// and saved results; empty = not set (the current directory is used).
+	// Its existence is checked when used, not on load.
 	PGPDir string `json:"pgpDir,omitempty"`
 }
 

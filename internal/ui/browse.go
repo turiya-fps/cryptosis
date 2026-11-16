@@ -184,15 +184,16 @@ func formatBrowseRow(entry dirlist.Entry, columns browseColumns, mode browseMode
 	}
 
 	encrypted := entry.Kind == dirlist.ArmoredMessage || entry.Kind == dirlist.BinaryEncrypted
+	// OpenPGPOther may be a binary signed message; gpg rejects keys and
+	// detached signatures itself.
+	decryptable := encrypted || entry.Kind == dirlist.OpenPGPOther
 	var marker string
 	switch {
 	case entry.Kind == dirlist.Unreadable:
 		marker, disabledReason = "✗ unreadable", "This file cannot be read (check its permissions)."
 	case mode == browseEncrypt && encrypted:
 		marker = "[encrypted]"
-	case mode == browseDecrypt && entry.Kind == dirlist.BinaryEncrypted:
-		marker, disabledReason = "✗ binary: Files menu", "Binary (unarmored) message: decrypt it with Files → Decrypt."
-	case mode == browseDecrypt && entry.Kind != dirlist.ArmoredMessage:
+	case mode == browseDecrypt && !decryptable:
 		marker, disabledReason = "✗ not encrypted", "Not an encrypted PGP message."
 	}
 	if marker != "" {

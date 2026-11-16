@@ -219,7 +219,7 @@ func validateGPGPath(v string) error {
 // absolute path ("" clears the setting).
 func (a *App) inputPGPDir(current string) (string, error) {
 	value := current
-	if err := a.inputString("PGP file directory", "Browsed by Text & clipboard; ~ is your home directory. Empty clears it.", &value, validatePGPDirOrEmpty); err != nil {
+	if err := a.inputString("PGP file directory", "Browsed by Encrypt & decrypt; default folder for exports and saved results. ~ is your home directory. Empty clears it.", &value, validatePGPDirOrEmpty); err != nil {
 		return current, err
 	}
 	if value == "" {

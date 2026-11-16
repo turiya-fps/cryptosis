@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/turiya-fps/cryptosis/internal/gpg"
 )
 
 func TestOpenFileInputRoutesBySize(t *testing.T) {
@@ -56,5 +58,36 @@ func TestResultDestinations(t *testing.T) {
 		if !slices.Equal(got, testCase.want) {
 			t.Errorf("%s: %v, want %v", testCase.name, got, testCase.want)
 		}
+	}
+}
+
+func TestDecryptedAcceptsInlineSigned(t *testing.T) {
+	status := func(lines string) gpg.Result {
+		return gpg.Result{Status: gpg.ParseStatus([]byte(lines))}
+	}
+	cases := map[string]bool{
+		"[GNUPG:] PLAINTEXT 62 0 \n[GNUPG:] END_DECRYPTION\n": true,
+		"[GNUPG:] PLAINTEXT 62 0 \n[GNUPG:] GOODSIG ABCD x\n": true, // gpg --sign, no encryption
+		"[GNUPG:] NODATA 1\n": false,
+	}
+	for lines, want := range cases {
+		if got := decrypted(status(lines)); got != want {
+			t.Errorf("decrypted(%q) = %v, want %v", lines, got, want)
+		}
+	}
+}
+
+func TestOutputDirPrefersPGPDir(t *testing.T) {
+	app := &App{}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := app.outputDir(); got != cwd {
+		t.Errorf("unset: %q, want cwd %q", got, cwd)
+	}
+	app.Config.PGPDir = "/tmp/pgp"
+	if got := app.outputDir(); got != "/tmp/pgp" {
+		t.Errorf("set: %q, want /tmp/pgp", got)
 	}
 }
