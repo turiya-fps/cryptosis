@@ -147,8 +147,12 @@ func (a *App) chooseBrowseEntry(dir string, listing dirlist.Listing, mode browse
 	if cameFrom != "" {
 		choice = browseChoice{browseDir, cameFrom}
 	}
+	title := abbreviateHome(dir)
+	if a.Config.AccessibleMode { // huh's accessible select prints the title only
+		title += "\n" + description
+	}
 	menu := huh.NewSelect[browseChoice]().
-		Title(abbreviateHome(dir)).
+		Title(title).
 		Description(description).
 		Options(options...).
 		Height(min(len(options)+4, browseHeight)).
