@@ -173,14 +173,20 @@ type outputFile struct {
 	overwrite bool
 }
 
-// askOutputPath asks for a destination file, suggesting one in the current
-// directory, and confirms before an existing file is replaced.
+// askOutputPath asks for a destination file, suggesting one in the default
+// output directory, and confirms before an existing file is replaced.
 func (a *App) askOutputPath(title, suggestedName string) (outputFile, error) {
-	suggested := suggestedName
-	if cwd, err := os.Getwd(); err == nil {
-		suggested = filepath.Join(cwd, suggestedName)
+	return a.askOutputFilePath(title, filepath.Join(a.outputDir(), suggestedName))
+}
+
+// outputDir is where new files go by default: the PGP file directory when
+// set, else the current directory ("" if unknown, leaving a relative name).
+func (a *App) outputDir() string {
+	if a.Config.PGPDir != "" {
+		return a.Config.PGPDir
 	}
-	return a.askOutputFilePath(title, suggested)
+	cwd, _ := os.Getwd()
+	return cwd
 }
 
 // runToFile runs cmd with stdout going to a temp file that replaces the

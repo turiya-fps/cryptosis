@@ -265,7 +265,7 @@ func (a *App) encrypt(ctx context.Context) error {
 	armor := in.path == "" || a.Config.ArmorFiles
 	job := cryptJob{
 		cmd:       gpg.EncryptCommand(request.fprs, signFpr, request.trustAlways, armor),
-		succeeded: func(result gpg.Result) bool { return result.Status.Has("END_ENCRYPTION") },
+		succeeded: encrypted,
 		outTitle:  "Encrypt to",
 		label:     "Encrypted:",
 	}
@@ -287,13 +287,10 @@ func (a *App) decrypt(ctx context.Context) error {
 	// gpg never gets --use-embedded-filename: plaintext lands only where the
 	// user chooses, through deliverResult or the temp+rename output.
 	job := cryptJob{
-		cmd: gpg.DecryptCommand(),
-		// PLAINTEXT without END_DECRYPTION: an inline-signed, unencrypted message.
-		succeeded: func(result gpg.Result) bool {
-			return result.Status.Has("END_DECRYPTION") || result.Status.Has("PLAINTEXT")
-		},
-		outTitle: "Decrypt to",
-		label:    "Decrypted:",
+		cmd:       gpg.DecryptCommand(),
+		succeeded: decrypted,
+		outTitle:  "Decrypt to",
+		label:     "Decrypted:",
 		after: func(result gpg.Result) {
 			fmt.Fprintln(a.out, "Signatures:")
 			a.reportSignatures(ctx, result.Status)
@@ -303,6 +300,14 @@ func (a *App) decrypt(ctx context.Context) error {
 		job.suggested = suggestStrippedName(in.path)
 	}
 	return a.runJob(ctx, in, job)
+}
+
+func encrypted(result gpg.Result) bool { return result.Status.Has("END_ENCRYPTION") }
+
+// decrypted accepts PLAINTEXT without END_DECRYPTION too: an inline-signed,
+// unencrypted message (gpg --sign).
+func decrypted(result gpg.Result) bool {
+	return result.Status.Has("END_DECRYPTION") || result.Status.Has("PLAINTEXT")
 }
 
 // cryptJob is one encrypt or decrypt run, independent of the input source.
@@ -435,16 +440,13 @@ func (a *App) copyToClipboard(text string) error {
 }
 
 // saveResult writes data via temp+rename, suggesting a path next to the
-// input file, else message.txt in the PGP directory or the current one.
+// input file, else message.txt in the default output directory.
 func (a *App) saveResult(data []byte, suggested string) error {
 	var output outputFile
 	var err error
-	switch {
-	case suggested != "":
+	if suggested != "" {
 		output, err = a.askOutputFilePath("Save to", suggested)
-	case a.Config.PGPDir != "":
-		output, err = a.askOutputFilePath("Save to", filepath.Join(a.Config.PGPDir, "message.txt"))
-	default:
+	} else {
 		output, err = a.askOutputPath("Save to", "message.txt")
 	}
 	if err != nil || output.dest == "" {

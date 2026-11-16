@@ -5,8 +5,8 @@ Menu-driven terminal front-end for [GnuPG](https://gnupg.org). Pre-release.
 cryptosis implements no cryptography: every operation runs the system `gpg`, shown in full and confirmed first. Passphrases go only through gpg-agent's pinentry.
 
 - **Keys:** list, generate, import (previewed), export, delete, expiry, owner trust, revocation cert
-- **Files:** encrypt, decrypt, sign, verify
-- **Text & clipboard:** encrypt/decrypt pasted text, clipboard, file, or a file picked from your PGP directory
+- **Encrypt & decrypt:** pasted text, clipboard, any file (binary, large files streamed), or a file picked from your PGP directory; optional signing; signatures reported on decrypt
+- **Sign & verify:** detached, cleartext or inline signatures
 - **Keyserver / WKD:** fetch, search, publish
 
 ## Requirements
@@ -44,7 +44,7 @@ Builds are reproducible: `go version -m cryptosis` shows the Go version to rebui
 
 ## Usage
 
-Run `cryptosis` in a terminal (piped I/O is refused). Settings live in `~/.config/cryptosis/config.json` (or `$XDG_CONFIG_HOME`): keyserver (default keys.openpgp.org), clipboard auto-clear, key defaults, armor, accessible mode, PGP file directory (browsed from Text & clipboard; dotfiles and symlinks are not listed).
+Run `cryptosis` in a terminal (piped I/O is refused). Settings live in `~/.config/cryptosis/config.json` (or `$XDG_CONFIG_HOME`): keyserver (default keys.openpgp.org), clipboard auto-clear, key defaults, armor, accessible mode, PGP file directory (browsed from Encrypt & decrypt, where dotfiles and symlinks are not listed; default folder for key exports, revocation certificates and saved results).
 
 ## Security model
 
