@@ -291,6 +291,7 @@ func (a *App) decrypt(ctx context.Context) error {
 		succeeded: decrypted,
 		outTitle:  "Decrypt to",
 		label:     "Decrypted:",
+		viewSaved: true,
 		after: func(result gpg.Result) {
 			fmt.Fprintln(a.out, "Signatures:")
 			a.reportSignatures(ctx, result.Status)
@@ -317,6 +318,7 @@ type cryptJob struct {
 	outTitle  string           // output path prompt for streamed input
 	suggested string           // output next to the input file; "" for text input
 	label     string           // heading for the screen view
+	viewSaved bool             // offer to view a text result once saved to a file
 	after     func(gpg.Result) // runs once gpg succeeded, before delivery
 }
 
@@ -334,7 +336,7 @@ func (a *App) runJob(ctx context.Context, in input, job cryptJob) error {
 		return errGPGFailed
 	}
 	job.done(result)
-	return a.deliverResult(result.Stdout, job.label, job.suggested)
+	return a.deliverResult(result.Stdout, job)
 }
 
 func (a *App) streamJob(ctx context.Context, file *os.File, job cryptJob) error {
@@ -388,7 +390,7 @@ func resultDestinations(isText, nextToInput, hasClipboard bool) []destination {
 // deliverResult hands gpg's output to the chosen destination: screen
 // (sanitized, on the alternate screen, cleared afterwards), clipboard (with
 // auto-clear), or a file (suggested next to the input file, if any).
-func (a *App) deliverResult(data []byte, label, suggested string) error {
+func (a *App) deliverResult(data []byte, job cryptJob) error {
 	isText := dirlist.IsText(data)
 	if !isText {
 		fmt.Fprintln(a.out, "The result is binary, so it can only be saved to a file.")
@@ -399,7 +401,7 @@ func (a *App) deliverResult(data []byte, label, suggested string) error {
 		destFile:      "Save to file",
 		destBack:      "Back",
 	}
-	dests := resultDestinations(isText, suggested != "", a.clipboard != nil)
+	dests := resultDestinations(isText, job.suggested != "", a.clipboard != nil)
 	options := make([]huh.Option[destination], 0, len(dests))
 	for _, dest := range dests {
 		options = append(options, huh.NewOption(labels[dest], dest))
@@ -411,11 +413,19 @@ func (a *App) deliverResult(data []byte, label, suggested string) error {
 	}
 	switch choice {
 	case destScreen:
-		return a.showOnScreen(string(data), label)
+		return a.showOnScreen(string(data), job.label)
 	case destClipboard:
 		return a.copyToClipboard(string(data))
 	case destFile:
-		return a.saveResult(data, suggested)
+		saved, err := a.saveResult(data, job.suggested)
+		if err != nil || !saved || !job.viewSaved || !isText {
+			return err
+		}
+		view, err := a.askConfirm("View the decrypted text?", true)
+		if err != nil || !view {
+			return ignoreAbort(err)
+		}
+		return a.showOnScreen(string(data), job.label)
 	default:
 		return nil
 	}
@@ -440,30 +450,30 @@ func (a *App) copyToClipboard(text string) error {
 }
 
 // saveResult writes data via temp+rename, suggesting a path next to the
-// input file, else message.txt in the default output directory.
-func (a *App) saveResult(data []byte, suggested string) error {
+// input file, else message.txt in the default output directory. saved is
+// false when the user cancelled.
+func (a *App) saveResult(data []byte, suggested string) (saved bool, err error) {
 	var output outputFile
-	var err error
 	if suggested != "" {
 		output, err = a.askOutputFilePath("Save to", suggested)
 	} else {
 		output, err = a.askOutputPath("Save to", "message.txt")
 	}
 	if err != nil || output.dest == "" {
-		return ignoreAbort(err)
+		return false, ignoreAbort(err)
 	}
 	out, err := fsout.Create(output.dest)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, err := out.Writer().Write(data); err != nil {
-		return errors.Join(err, out.Abort())
+		return false, errors.Join(err, out.Abort())
 	}
 	if err := out.Commit(output.overwrite); err != nil {
-		return commitError(err, output.dest)
+		return false, commitError(err, output.dest)
 	}
 	fmt.Fprintf(a.out, "Wrote %s\n", sanitize.Line(output.dest))
-	return nil
+	return true, nil
 }
 
 // showOnScreen displays text on the alternate screen buffer and clears it
