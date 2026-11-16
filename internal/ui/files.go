@@ -21,9 +21,7 @@ import (
 type filesMenuItem int
 
 const (
-	filesEncrypt filesMenuItem = iota
-	filesDecrypt
-	filesSign
+	filesSign filesMenuItem = iota
 	filesVerify
 	filesBack
 )
@@ -46,10 +44,8 @@ func (a *App) runFiles(ctx context.Context) error {
 func (a *App) chooseFilesMenu() (filesMenuItem, error) {
 	var choice filesMenuItem
 	menu := huh.NewSelect[filesMenuItem]().
-		Title("Files").
+		Title("Sign & verify").
 		Options(
-			huh.NewOption("Encrypt a file", filesEncrypt),
-			huh.NewOption("Decrypt a file", filesDecrypt),
 			huh.NewOption("Sign a file (detached, cleartext or inline)", filesSign),
 			huh.NewOption("Verify a file or signature", filesVerify),
 			huh.NewOption("Back", filesBack),
@@ -61,75 +57,11 @@ func (a *App) chooseFilesMenu() (filesMenuItem, error) {
 
 func (a *App) dispatchFiles(ctx context.Context, choice filesMenuItem) error {
 	switch choice {
-	case filesEncrypt:
-		return a.encryptFile(ctx)
-	case filesDecrypt:
-		return a.decryptFile(ctx)
 	case filesSign:
 		return a.signFile(ctx)
 	default:
 		return a.verifyFile(ctx)
 	}
-}
-
-func (a *App) encryptFile(ctx context.Context) error {
-	input, err := a.askInputPath("File to encrypt")
-	if err != nil || input == "" {
-		return ignoreAbort(err)
-	}
-	request, ok, err := a.chooseRecipients(ctx)
-	if err != nil || !ok {
-		return err
-	}
-	signFpr, _, err := a.askSignKey(ctx, "Also sign the file?")
-	if err != nil {
-		return err
-	}
-	file, err := openInput(input)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	armor := a.Config.ArmorFiles
-	output, err := a.askOutputFilePath("Encrypt to", input+armorSuffix(armor))
-	if err != nil || output.dest == "" {
-		return ignoreAbort(err)
-	}
-	cmd := gpg.EncryptCommand(request.fprs, signFpr, request.trustAlways, armor).WithStdin(file)
-	encrypted := func(result gpg.Result) bool { return result.Status.Has("END_ENCRYPTION") }
-	_, err = a.runToFile(ctx, cmd, output, encrypted)
-	return err
-}
-
-func (a *App) decryptFile(ctx context.Context) error {
-	input, err := a.askInputPath("File to decrypt (encrypted or inline-signed)")
-	if err != nil || input == "" {
-		return ignoreAbort(err)
-	}
-	output, err := a.askOutputFilePath("Decrypt to", suggestStrippedName(input))
-	if err != nil || output.dest == "" {
-		return ignoreAbort(err)
-	}
-	file, err := openInput(input)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// gpg never gets --use-embedded-filename: the destination above is the
-	// only place plaintext can land, via the temp+rename output.
-	cmd := gpg.DecryptCommand().WithStdin(file)
-	decrypted := func(result gpg.Result) bool {
-		return result.Status.Has("END_DECRYPTION") || result.Status.Has("PLAINTEXT")
-	}
-	result, err := a.runToFile(ctx, cmd, output, decrypted)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(a.out, "Signatures:")
-	a.reportSignatures(ctx, result.Status)
-	return nil
 }
 
 func (a *App) signFile(ctx context.Context) error {
@@ -201,7 +133,7 @@ func (a *App) verifyFile(ctx context.Context) error {
 	case gpg.ArmorSignedMessage:
 		return a.verifyClearsigned(ctx, input)
 	case gpg.ArmorMessage:
-		fmt.Fprintln(a.out, "This is an encrypted or inline-signed message; use Files → Decrypt a file.")
+		fmt.Fprintln(a.out, "This is an encrypted or inline-signed message; use Encrypt & decrypt → Decrypt.")
 		fmt.Fprintln(a.out, "Any signature is reported when the content is decrypted.")
 		return nil
 	case gpg.ArmorSignature:
