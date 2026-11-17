@@ -27,10 +27,12 @@ func TestDetectPacket(t *testing.T) {
 		{"PKESK bad version", []byte{0x84, 0x5e, 0x07}, PacketNone},
 		{"PKESK truncated before version", []byte{0x84, 0x5e}, PacketNone},
 		{"new header truncated", []byte{0xc1}, PacketNone},
-		{"old signature", []byte{0x89, 0x01, 0x33, 0x04}, PacketOther},
-		{"new public key", []byte{0xc6, 0x33, 0x04}, PacketOther},
-		{"old compressed, indeterminate length", []byte{0xa3, 0x01}, PacketOther},
-		{"new literal, partial length", []byte{0xcb, 0xe1, 0x62}, PacketOther},
+		{"old signature", []byte{0x89, 0x01, 0x33, 0x04}, PacketSignature},
+		{"new public key", []byte{0xc6, 0x33, 0x04}, PacketKey},
+		{"old secret key", []byte{0x95, 0x01, 0x33, 0x04}, PacketKey},
+		{"old one-pass signature", []byte{0x90, 0x0d, 0x03}, PacketSignedData},
+		{"old compressed, indeterminate length", []byte{0xa3, 0x01}, PacketSignedData},
+		{"new literal, partial length", []byte{0xcb, 0xe1, 0x62}, PacketSignedData},
 		{"reserved tag 0", []byte{0x80, 0x01, 0x00}, PacketNone},
 		{"unlisted tag (user ID)", []byte{0xcd, 0x05, 'a'}, PacketNone},
 	}
@@ -65,9 +67,9 @@ func TestDetectPacketRealGPG(t *testing.T) {
 	}{
 		"public-key encrypted": {gpgOut([]byte("x"), "--encrypt", "--recipient", fpr), PacketEncrypted},
 		"symmetric encrypted":  {gpgOut([]byte("x"), "--symmetric", "--passphrase", "pw"), PacketEncrypted},
-		"detached signature":   {gpgOut([]byte("x"), "--detach-sign"), PacketOther},
-		"signed message":       {gpgOut([]byte("x"), "--sign"), PacketOther},
-		"exported public key":  {gpgOut(nil, "--export", fpr), PacketOther},
+		"detached signature":   {gpgOut([]byte("x"), "--detach-sign"), PacketSignature},
+		"signed message":       {gpgOut([]byte("x"), "--sign"), PacketSignedData},
+		"exported public key":  {gpgOut(nil, "--export", fpr), PacketKey},
 		"armored message":      {gpgOut([]byte("x"), "--encrypt", "--armor", "--recipient", fpr), PacketNone},
 	}
 	for name, testCase := range cases {

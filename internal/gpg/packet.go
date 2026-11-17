@@ -11,8 +11,14 @@ const (
 	// PacketEncrypted is an encrypted message: it starts with a public-key or
 	// symmetric-key encrypted session key packet.
 	PacketEncrypted
-	// PacketOther is other OpenPGP data: signature, key, compressed or literal data.
-	PacketOther
+	// PacketSignature starts with a signature packet: a detached signature (or
+	// a revocation certificate).
+	PacketSignature
+	// PacketSignedData is a signed message: one-pass signature, compressed or
+	// literal data first (gpg --sign output).
+	PacketSignedData
+	// PacketKey is a transferable public or secret key.
+	PacketKey
 )
 
 // Packet tags (RFC 9580 §5).
@@ -48,8 +54,12 @@ func DetectPacket(data []byte) PacketKind {
 			return PacketEncrypted
 		}
 		return PacketNone
-	case tagSignature, tagOnePass, tagSecretKey, tagPublicKey, tagCompressed, tagLiteral:
-		return PacketOther
+	case tagSignature:
+		return PacketSignature
+	case tagOnePass, tagCompressed, tagLiteral:
+		return PacketSignedData
+	case tagSecretKey, tagPublicKey:
+		return PacketKey
 	default:
 		return PacketNone
 	}

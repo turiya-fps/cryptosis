@@ -121,30 +121,75 @@ func (a *App) chooseSignMode() (gpg.SignMode, error) {
 	return mode, nil
 }
 
+// verifyRoute is what a file chosen for Verify holds, by its content.
+type verifyRoute int
+
+const (
+	routeData        verifyRoute = iota // not OpenPGP: look for a sibling signature
+	routeClearsigned                    // cleartext signed message
+	routeDetached                       // detached signature, armored or binary
+	routeMessage                        // encrypted or signed message: belongs to Decrypt
+	routeKey                            // a key, not a signature
+)
+
+// classifyVerifyInput routes by ASCII armor first, then by the first binary
+// OpenPGP packet.
+func classifyVerifyInput(prefix []byte) verifyRoute {
+	switch gpg.DetectArmor(prefix) {
+	case gpg.ArmorSignedMessage:
+		return routeClearsigned
+	case gpg.ArmorSignature:
+		return routeDetached
+	case gpg.ArmorMessage:
+		return routeMessage
+	case gpg.ArmorPublicKey, gpg.ArmorPrivateKey:
+		return routeKey
+	case gpg.ArmorNone:
+	}
+	switch gpg.DetectPacket(prefix) {
+	case gpg.PacketSignature:
+		return routeDetached
+	case gpg.PacketSignedData, gpg.PacketEncrypted:
+		return routeMessage
+	case gpg.PacketKey:
+		return routeKey
+	case gpg.PacketNone:
+	}
+	return routeData
+}
+
 // verifyFile routes by content: a detached signature file, a cleartext
-// message, or the data file whose .sig/.asc sibling holds the signature.
+// message, or the data file whose .sig/.sig.asc/.asc sibling holds the signature.
 func (a *App) verifyFile(ctx context.Context) error {
 	input, err := a.askInputPath("File to verify (the message, or its detached signature)")
 	if err != nil || input == "" {
 		return ignoreAbort(err)
 	}
+	prefix, err := readPrefix(input)
+	if err != nil {
+		return err
+	}
 
-	switch gpg.DetectArmor(readPrefix(input)) {
-	case gpg.ArmorSignedMessage:
+	switch classifyVerifyInput(prefix) {
+	case routeClearsigned:
 		return a.verifyClearsigned(ctx, input)
-	case gpg.ArmorMessage:
-		fmt.Fprintln(a.out, "This is an encrypted or inline-signed message; use Encrypt & decrypt → Decrypt.")
+	case routeDetached:
+		return a.verifyDetached(ctx, input, suggestSignedData(input))
+	case routeMessage:
+		fmt.Fprintln(a.out, "This is an encrypted or signed message; use Encrypt & decrypt → Decrypt.")
 		fmt.Fprintln(a.out, "Any signature is reported when the content is decrypted.")
 		return nil
-	case gpg.ArmorSignature:
-		return a.verifyDetached(ctx, input, suggestSignedData(input))
+	case routeKey:
+		fmt.Fprintln(a.out, "This is an OpenPGP key, not a signature; use Keys → Import keys.")
+		return nil
+	case routeData:
 	}
 	if sibling := findDetachedSignature(input); sibling != "" {
 		fmt.Fprintf(a.out, "Using signature file %s\n", sanitize.Line(sibling))
 		return a.verifyDetached(ctx, sibling, input)
 	}
 	fmt.Fprintln(a.out, "No OpenPGP signature found in or next to this file.")
-	fmt.Fprintln(a.out, "For a detached signature, name it <file>.sig (or .asc) beside the data file.")
+	fmt.Fprintln(a.out, "For a detached signature, name it <file>.sig, <file>.sig.asc or <file>.asc beside the data file.")
 	return nil
 }
 
@@ -346,28 +391,35 @@ func readCappedFile(path string, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-// readPrefix returns the first bytes of path for armor detection.
-func readPrefix(path string) []byte {
+// readPrefix returns the first bytes of path for armor and packet detection.
+func readPrefix(path string) ([]byte, error) {
 	file, err := os.Open(path) //nolint:gosec // G304: read-only sniff of a user-chosen file
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer file.Close()
 	prefix := make([]byte, 512)
-	n, _ := file.Read(prefix)
-	return prefix[:n]
+	n, err := io.ReadFull(file, prefix)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, err
+	}
+	return prefix[:n], nil
 }
 
 // findDetachedSignature looks for a signature file beside dataPath: .sig, or
-// an .asc that actually is a detached signature (not a cleartext message).
+// an armored .sig.asc/.asc that actually is a detached signature (not a
+// cleartext message). Unreadable candidates are skipped.
 func findDetachedSignature(dataPath string) string {
-	for _, candidate := range []string{dataPath + ".sig", dataPath + ".asc"} {
+	for _, candidate := range []string{dataPath + ".sig", dataPath + ".sig.asc", dataPath + ".asc"} {
 		info, err := os.Stat(candidate)
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		if strings.HasSuffix(candidate, ".asc") && gpg.DetectArmor(readPrefix(candidate)) != gpg.ArmorSignature {
-			continue
+		if strings.HasSuffix(candidate, ".asc") {
+			prefix, err := readPrefix(candidate)
+			if err != nil || gpg.DetectArmor(prefix) != gpg.ArmorSignature {
+				continue
+			}
 		}
 		return candidate
 	}

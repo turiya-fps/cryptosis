@@ -184,8 +184,8 @@ func formatBrowseRow(entry dirlist.Entry, columns browseColumns, mode browseMode
 	}
 
 	encrypted := entry.Kind == dirlist.ArmoredMessage || entry.Kind == dirlist.BinaryEncrypted
-	// OpenPGPOther may be a binary signed message; gpg rejects keys and
-	// detached signatures itself.
+	// OpenPGPOther is a binary signed message: Decrypt extracts it and reports
+	// the signature. Binary keys and detached signatures have their own kinds.
 	decryptable := encrypted || entry.Kind == dirlist.OpenPGPOther
 	var marker string
 	switch {

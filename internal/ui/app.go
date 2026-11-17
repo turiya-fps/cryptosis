@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
+	"syscall"
 
 	"charm.land/huh/v2"
 
@@ -141,7 +143,18 @@ func (a *App) printBanner() {
 }
 
 func (a *App) printError(err error) {
-	fmt.Fprintf(a.out, "error: %s\n\n", sanitize.Line(err.Error()))
+	fmt.Fprintf(a.out, "error: %s%s\n\n", sanitize.Line(err.Error()), fileAccessHint(runtime.GOOS, err))
+}
+
+// fileAccessHint explains EPERM on macOS, where privacy protection (TCC)
+// blocks folders such as Downloads or Desktop for a terminal app that was
+// not granted access: stat works, but open and readdir fail with EPERM.
+func fileAccessHint(goos string, err error) string {
+	if goos != "darwin" || !errors.Is(err, syscall.EPERM) {
+		return ""
+	}
+	return " (macOS privacy settings may block this folder for your terminal app: " +
+		"System Settings → Privacy & Security → Files & Folders)"
 }
 
 func (a *App) newForm(groups ...*huh.Group) *huh.Form {
