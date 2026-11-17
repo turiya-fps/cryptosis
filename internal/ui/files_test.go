@@ -3,8 +3,11 @@ package ui
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -200,6 +203,72 @@ func TestFindDetachedSignature(t *testing.T) {
 	writeForTest(t, dir+"/notes.txt.asc", "-----BEGIN PGP SIGNATURE-----\n")
 	if got := findDetachedSignature(dir + "/notes.txt"); got != dir+"/notes.txt.asc" {
 		t.Errorf("armored detached sig = %q", got)
+	}
+
+	// cryptosis names armored detached signatures <file>.sig.asc.
+	writeForTest(t, dir+"/plan.txt", "data")
+	writeForTest(t, dir+"/plan.txt.sig.asc", "-----BEGIN PGP SIGNED MESSAGE-----\n")
+	if got := findDetachedSignature(dir + "/plan.txt"); got != "" {
+		t.Errorf("clearsigned .sig.asc used as detached signature: %q", got)
+	}
+	writeForTest(t, dir+"/plan.txt.sig.asc", "-----BEGIN PGP SIGNATURE-----\n")
+	if got := findDetachedSignature(dir + "/plan.txt"); got != dir+"/plan.txt.sig.asc" {
+		t.Errorf(".sig.asc sig = %q", got)
+	}
+}
+
+func TestClassifyVerifyInput(t *testing.T) {
+	cases := map[string]verifyRoute{
+		"-----BEGIN PGP SIGNED MESSAGE-----\n":    routeClearsigned,
+		"-----BEGIN PGP SIGNATURE-----\n":         routeDetached,
+		"-----BEGIN PGP MESSAGE-----\n":           routeMessage,
+		"-----BEGIN PGP PUBLIC KEY BLOCK-----\n":  routeKey,
+		"-----BEGIN PGP PRIVATE KEY BLOCK-----\n": routeKey,
+		"\x89\x01\x33\x04":                        routeDetached, // binary detached signature
+		"\xa3\x01":                                routeMessage,  // binary signed (compressed)
+		"\x90\x0d\x03":                            routeMessage,  // binary signed (one-pass)
+		"\x84\x5e\x03":                            routeMessage,  // binary encrypted
+		"\x99\x01\x0d\x04":                        routeKey,      // binary public key
+		"plain text\n":                            routeData,
+		"":                                        routeData,
+	}
+	for prefix, want := range cases {
+		if got := classifyVerifyInput([]byte(prefix)); got != want {
+			t.Errorf("classifyVerifyInput(%q) = %v, want %v", prefix, got, want)
+		}
+	}
+}
+
+func TestReadPrefixReportsUnreadableFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root reads any file")
+	}
+	path := t.TempDir() + "/locked"
+	writeForTest(t, path, "-----BEGIN PGP SIGNATURE-----\n")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readPrefix(path); err == nil {
+		t.Fatal("unreadable file read without error")
+	}
+	if prefix, err := readPrefix(t.TempDir() + "/missing"); err == nil {
+		t.Fatalf("missing file read: %q", prefix)
+	}
+}
+
+func TestFileAccessHint(t *testing.T) {
+	eperm := &fs.PathError{Op: "open", Path: "/Users/x/Downloads/f", Err: syscall.EPERM}
+	if fileAccessHint("darwin", fmt.Errorf("read input: %w", eperm)) == "" {
+		t.Error("no hint for wrapped EPERM on darwin")
+	}
+	for name, hint := range map[string]string{
+		"linux EPERM":   fileAccessHint("linux", eperm),
+		"darwin EACCES": fileAccessHint("darwin", &fs.PathError{Op: "open", Path: "f", Err: syscall.EACCES}),
+		"darwin other":  fileAccessHint("darwin", errors.New("operation not permitted")),
+	} {
+		if hint != "" {
+			t.Errorf("%s: unexpected hint %q", name, hint)
+		}
 	}
 }
 

@@ -36,9 +36,9 @@ const (
 	Dir             Kind = iota
 	ArmoredMessage       // -----BEGIN PGP MESSAGE-----
 	BinaryEncrypted      // binary OpenPGP starting with a session key packet
-	Signature            // armored detached or cleartext signature
-	Key                  // armored public or private key block
-	OpenPGPOther         // other binary OpenPGP (signature, key, signed data)
+	Signature            // detached (armored or binary) or cleartext signature
+	Key                  // public or private key, armored or binary
+	OpenPGPOther         // binary signed message (one-pass, compressed or literal data)
 	Text
 	Binary
 	Unreadable
@@ -142,7 +142,11 @@ func classify(head []byte, truncated bool) Kind {
 	switch gpg.DetectPacket(head) {
 	case gpg.PacketEncrypted:
 		return BinaryEncrypted
-	case gpg.PacketOther:
+	case gpg.PacketSignature:
+		return Signature
+	case gpg.PacketKey:
+		return Key
+	case gpg.PacketSignedData:
 		return OpenPGPOther
 	case gpg.PacketNone:
 	}

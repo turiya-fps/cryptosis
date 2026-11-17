@@ -38,6 +38,8 @@ func TestList(t *testing.T) {
 	writeFile(t, dir, "doc.sig", armoredSig, 3*time.Hour)
 	writeFile(t, dir, "key.asc", armoredKey, 4*time.Hour)
 	writeFile(t, dir, "signed.gpg", "\xa3\x01data", 5*time.Hour)
+	writeFile(t, dir, "bin.sig", "\x89\x01\x33\x04rest", 5*time.Hour+30*time.Minute)
+	writeFile(t, dir, "key.gpg", "\x99\x01\x0d\x04rest", 5*time.Hour+45*time.Minute)
 	writeFile(t, dir, "notes.txt", "héllo\n", 6*time.Hour)
 	writeFile(t, dir, "blob.bin", "\x00\x01\x02", 7*time.Hour)
 	text := writeFile(t, dir, ".hidden", "x", 0)
@@ -64,7 +66,8 @@ func TestList(t *testing.T) {
 	}{
 		{"alpha", Dir}, {"zeta", Dir},
 		{"msg.asc", ArmoredMessage}, {"msg.gpg", BinaryEncrypted}, {"doc.sig", Signature},
-		{"key.asc", Key}, {"signed.gpg", OpenPGPOther}, {"notes.txt", Text}, {"blob.bin", Binary},
+		{"key.asc", Key}, {"signed.gpg", OpenPGPOther}, {"bin.sig", Signature}, {"key.gpg", Key},
+		{"notes.txt", Text}, {"blob.bin", Binary},
 	}
 	if listing.Truncated {
 		t.Error("Truncated = true")
@@ -77,7 +80,7 @@ func TestList(t *testing.T) {
 			t.Errorf("entry %d = %s/%v, want %s/%v", i, entry.Name, entry.Kind, want[i].name, want[i].kind)
 		}
 	}
-	notes := listing.Entries[7]
+	notes := listing.Entries[9]
 	if notes.Size != int64(len("héllo\n")) || time.Since(notes.Modified) < 5*time.Hour {
 		t.Errorf("notes metadata = %+v", notes)
 	}
