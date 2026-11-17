@@ -288,14 +288,11 @@ func (a *App) decrypt(ctx context.Context) error {
 	// user chooses, through deliverResult or the temp+rename output.
 	job := cryptJob{
 		cmd:       gpg.DecryptCommand(),
-		succeeded: decrypted,
+		succeeded: gpg.DecryptSucceeded,
 		outTitle:  "Decrypt to",
 		label:     "Decrypted:",
 		viewSaved: true,
-		after: func(result gpg.Result) {
-			fmt.Fprintln(a.out, "Signatures:")
-			a.reportSignatures(ctx, result.Status)
-		},
+		report:    func(result gpg.Result) { a.reportDecrypt(ctx, result) },
 	}
 	if in.path != "" {
 		job.suggested = suggestStrippedName(in.path)
@@ -303,23 +300,34 @@ func (a *App) decrypt(ctx context.Context) error {
 	return a.runJob(ctx, in, job)
 }
 
-func encrypted(result gpg.Result) bool { return result.Status.Has("END_ENCRYPTION") }
+func encrypted(result gpg.Result) bool { return result.Succeeded("END_ENCRYPTION") }
 
-// decrypted accepts PLAINTEXT without END_DECRYPTION too: an inline-signed,
-// unencrypted message (gpg --sign).
-func decrypted(result gpg.Result) bool {
-	return result.Status.Has("END_DECRYPTION") || result.Status.Has("PLAINTEXT")
+const missingSignerNote = "gpg's exit code reflects the missing signer key only; decryption and its integrity check succeeded."
+
+// reportDecrypt prints the signature report of a decrypt run whether or not
+// it succeeded, so a missing signer key can still be fetched. A failed run
+// without signature lines prints nothing: "Not signed" would mislead.
+func (a *App) reportDecrypt(ctx context.Context, result gpg.Result) {
+	succeeded := gpg.DecryptSucceeded(result)
+	if !succeeded && len(gpg.ParseSignatures(result.Status)) == 0 {
+		return
+	}
+	if succeeded && result.ExitCode != 0 {
+		fmt.Fprintln(a.out, missingSignerNote)
+	}
+	fmt.Fprintln(a.out, "Signatures:")
+	a.reportSignatures(ctx, result.Status)
 }
 
 // cryptJob is one encrypt or decrypt run, independent of the input source.
 type cryptJob struct {
 	cmd       gpg.Command
-	succeeded func(gpg.Result) bool
-	outTitle  string           // output path prompt for streamed input
-	suggested string           // output next to the input file; "" for text input
-	label     string           // heading for the screen view
-	viewSaved bool             // offer to view a text result once saved to a file
-	after     func(gpg.Result) // runs once gpg succeeded, before delivery
+	succeeded func(gpg.Result) bool // judges the whole result, exit code included
+	outTitle  string                // output path prompt for streamed input
+	suggested string                // output next to the input file; "" for text input
+	label     string                // heading for the screen view
+	viewSaved bool                  // offer to view a text result once saved to a file
+	report    func(gpg.Result)      // runs once gpg ran, success or not, before delivery
 }
 
 // runJob captures gpg's output in memory and offers it to deliverResult; a
@@ -332,10 +340,10 @@ func (a *App) runJob(ctx context.Context, in input, job cryptJob) error {
 	if err != nil || !ran {
 		return err
 	}
-	if result.ExitCode != 0 || !job.succeeded(result) {
+	job.runReport(result)
+	if !job.succeeded(result) {
 		return errGPGFailed
 	}
-	job.done(result)
 	return a.deliverResult(result.Stdout, job)
 }
 
@@ -344,17 +352,16 @@ func (a *App) streamJob(ctx context.Context, file *os.File, job cryptJob) error 
 	if err != nil || output.dest == "" {
 		return ignoreAbort(err)
 	}
-	result, err := a.runToFile(ctx, job.cmd.WithStdin(file), output, job.succeeded)
-	if err != nil {
-		return err
+	result, ran, err := a.runToFile(ctx, job.cmd.WithStdin(file), output, job.succeeded)
+	if ran && (err == nil || errors.Is(err, errGPGFailed)) {
+		job.runReport(result)
 	}
-	job.done(result)
-	return nil
+	return err
 }
 
-func (j cryptJob) done(result gpg.Result) {
-	if j.after != nil {
-		j.after(result)
+func (j cryptJob) runReport(result gpg.Result) {
+	if j.report != nil {
+		j.report(result)
 	}
 }
 

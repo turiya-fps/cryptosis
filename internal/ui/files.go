@@ -95,8 +95,8 @@ func (a *App) signFile(ctx context.Context) error {
 		return ignoreAbort(err)
 	}
 	cmd := gpg.SignCommand(mode, signFpr, armor).WithStdin(file)
-	signed := func(result gpg.Result) bool { return result.Status.Has("SIG_CREATED") }
-	_, err = a.runToFile(ctx, cmd, output, signed)
+	signed := func(result gpg.Result) bool { return result.Succeeded("SIG_CREATED") }
+	_, _, err = a.runToFile(ctx, cmd, output, signed)
 	return err
 }
 

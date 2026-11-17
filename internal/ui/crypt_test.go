@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/turiya-fps/cryptosis/internal/config"
 	"github.com/turiya-fps/cryptosis/internal/gpg"
 )
 
@@ -61,19 +64,36 @@ func TestResultDestinations(t *testing.T) {
 	}
 }
 
-func TestDecryptedAcceptsInlineSigned(t *testing.T) {
-	status := func(lines string) gpg.Result {
-		return gpg.Result{Status: gpg.ParseStatus([]byte(lines))}
+func TestReportDecrypt(t *testing.T) {
+	result := func(exit int, lines string) gpg.Result {
+		return gpg.Result{ExitCode: exit, Status: gpg.ParseStatus([]byte(lines))}
 	}
-	cases := map[string]bool{
-		"[GNUPG:] PLAINTEXT 62 0 \n[GNUPG:] END_DECRYPTION\n": true,
-		"[GNUPG:] PLAINTEXT 62 0 \n[GNUPG:] GOODSIG ABCD x\n": true, // gpg --sign, no encryption
-		"[GNUPG:] NODATA 1\n": false,
+	report := func(r gpg.Result) string {
+		var out bytes.Buffer
+		New(Startup{Config: config.Default()}, &out).reportDecrypt(context.Background(), r)
+		return out.String()
 	}
-	for lines, want := range cases {
-		if got := decrypted(status(lines)); got != want {
-			t.Errorf("decrypted(%q) = %v, want %v", lines, got, want)
-		}
+
+	// A failed decryption without signatures must not claim "Not signed".
+	failed := result(2, "[GNUPG:] BADMDC\n[GNUPG:] DECRYPTION_FAILED\n[GNUPG:] END_DECRYPTION\n")
+	if got := report(failed); got != "" {
+		t.Errorf("failed decryption reported %q, want nothing", got)
+	}
+
+	good := result(0, "[GNUPG:] PLAINTEXT 62 0 \n[GNUPG:] NEWSIG\n[GNUPG:] GOODSIG 438F68FF5D06DB72 Alice\n[GNUPG:] DECRYPTION_OKAY\n")
+	if got := report(good); !strings.Contains(got, "Good signature by Alice") || strings.Contains(got, missingSignerNote) {
+		t.Errorf("good signature report = %q", got)
+	}
+
+	// A failure that carries signature lines still reports them (e.g. BADSIG).
+	bad := result(1, "[GNUPG:] PLAINTEXT 62 0 \n[GNUPG:] NEWSIG\n[GNUPG:] BADSIG 438F68FF5D06DB72 Alice\n")
+	if got := report(bad); !strings.Contains(got, "BAD signature") {
+		t.Errorf("bad signature report = %q", got)
+	}
+
+	unsigned := result(0, "[GNUPG:] PLAINTEXT 62 0 \n[GNUPG:] DECRYPTION_OKAY\n")
+	if got := report(unsigned); !strings.Contains(got, "Not signed.") {
+		t.Errorf("unsigned report = %q", got)
 	}
 }
 
