@@ -206,6 +206,128 @@ func TestClearsignDecryptExtractsAndVerifies(t *testing.T) {
 	}
 }
 
+// missingSignerFixture: the sender signs with a key the recipient does not
+// hold; the recipient's runner holds only its own key.
+type missingSignerFixture struct {
+	sender, recipient       *Runner
+	senderHome              string
+	senderFpr, recipientFpr string
+}
+
+func newMissingSignerFixture(t *testing.T) missingSignerFixture {
+	t.Helper()
+	sender, senderHome := newTestRunner(t)
+	recipient, recipientHome := newTestRunner(t)
+	f := missingSignerFixture{
+		sender:       sender,
+		recipient:    recipient,
+		senderHome:   senderHome,
+		senderFpr:    gpgtest.GenerateKey(t, sender.Bin(), senderHome, "Sender <sender@example.org>"),
+		recipientFpr: gpgtest.GenerateKey(t, recipient.Bin(), recipientHome, "Recipient <recipient@example.org>"),
+	}
+	recipientKey := exportPublicKey(t, recipient.Bin(), recipientHome, f.recipientFpr)
+	if _, err := sender.Run(context.Background(), ImportCommand().WithStdin(bytes.NewReader(recipientKey))); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// encryptSigned encrypts plaintext to the recipient, signed by the sender,
+// as binary OpenPGP.
+func (f missingSignerFixture) encryptSigned(t *testing.T, plaintext string) []byte {
+	t.Helper()
+	cmd := EncryptCommand([]string{f.recipientFpr}, f.senderFpr, true, false).WithStdin(strings.NewReader(plaintext))
+	encrypted, err := f.sender.Run(context.Background(), cmd)
+	if err != nil || !encrypted.Succeeded("END_ENCRYPTION") {
+		t.Fatalf("encrypt+sign: err=%v exit=%d stderr=%s", err, encrypted.ExitCode, encrypted.Stderr)
+	}
+	return encrypted.Stdout
+}
+
+func TestDecryptWithMissingSignerKeyIsAccepted(t *testing.T) {
+	f := newMissingSignerFixture(t)
+	ciphertext := f.encryptSigned(t, "hello")
+
+	decrypted, err := f.recipient.Run(context.Background(), DecryptCommand().WithStdin(bytes.NewReader(ciphertext)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("gpg exit code with missing signer key: %d", decrypted.ExitCode)
+	if !DecryptSucceeded(decrypted) {
+		t.Fatalf("not accepted: exit=%d status=%+v stderr=%s", decrypted.ExitCode, decrypted.Status, decrypted.Stderr)
+	}
+	if string(decrypted.Stdout) != "hello" {
+		t.Errorf("plaintext = %q, want %q", decrypted.Stdout, "hello")
+	}
+	sigs := ParseSignatures(decrypted.Status)
+	if len(sigs) != 1 || !sigs[0].ErrNoPubKey {
+		t.Fatalf("signatures = %+v, want one ERRSIG no-public-key", sigs)
+	}
+	if want := f.senderFpr[len(f.senderFpr)-16:]; sigs[0].KeyID != want {
+		t.Errorf("key id = %q, want %q", sigs[0].KeyID, want)
+	}
+}
+
+func TestDecryptRejectsTamperedCiphertext(t *testing.T) {
+	f := newMissingSignerFixture(t)
+	ciphertext := f.encryptSigned(t, "hello")
+	ciphertext[len(ciphertext)-10] ^= 0x01
+
+	decrypted, err := f.recipient.Run(context.Background(), DecryptCommand().WithStdin(bytes.NewReader(ciphertext)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if DecryptSucceeded(decrypted) {
+		t.Fatalf("tampered ciphertext accepted: exit=%d status=%+v", decrypted.ExitCode, decrypted.Status)
+	}
+}
+
+func TestDecryptRejectsSignedOnlyDataWithMissingKey(t *testing.T) {
+	f := newMissingSignerFixture(t)
+	signed, err := f.sender.Run(context.Background(), SignCommand(SignInline, f.senderFpr, false).WithStdin(strings.NewReader("hello")))
+	if err != nil || !signed.Succeeded("SIG_CREATED") {
+		t.Fatalf("sign: err=%v exit=%d stderr=%s", err, signed.ExitCode, signed.Stderr)
+	}
+
+	decrypted, err := f.recipient.Run(context.Background(), DecryptCommand().WithStdin(bytes.NewReader(signed.Stdout)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if DecryptSucceeded(decrypted) {
+		t.Fatalf("unverifiable signed-only data accepted: exit=%d status=%+v", decrypted.ExitCode, decrypted.Status)
+	}
+	if sigs := ParseSignatures(decrypted.Status); len(sigs) != 1 || !sigs[0].ErrNoPubKey {
+		t.Errorf("signatures = %+v, want one ERRSIG no-public-key for the fetch offer", sigs)
+	}
+}
+
+func TestDecryptRejectsAlteredSignedData(t *testing.T) {
+	f := newMissingSignerFixture(t)
+	// Uncompressed, so the literal text can be altered in place.
+	sign := exec.Command(f.sender.Bin(), "--homedir", f.senderHome, "--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+		"--compress-algo", "none", "--local-user", f.senderFpr, "--sign")
+	sign.Stdin = strings.NewReader("hello-world")
+	signed, err := sign.Output()
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	altered := bytes.Replace(signed, []byte("hello-world"), []byte("jello-world"), 1)
+	if bytes.Equal(altered, signed) {
+		t.Fatal("plaintext not found in signed data")
+	}
+
+	decrypted, err := f.sender.Run(context.Background(), DecryptCommand().WithStdin(bytes.NewReader(altered)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if DecryptSucceeded(decrypted) {
+		t.Fatalf("altered signed data accepted: exit=%d status=%+v", decrypted.ExitCode, decrypted.Status)
+	}
+	if sigs := ParseSignatures(decrypted.Status); len(sigs) != 1 || sigs[0].Outcome != SigBad {
+		t.Errorf("signatures = %+v, want one bad", sigs)
+	}
+}
+
 func TestVerifyUnknownKeyReportsERRSIG(t *testing.T) {
 	peer, peerHome := newTestRunner(t)
 	peerFpr := gpgtest.GenerateKey(t, peer.Bin(), peerHome, "Stranger <stranger@example.org>")

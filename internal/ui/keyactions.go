@@ -37,8 +37,8 @@ func (a *App) exportKey(ctx context.Context, key gpg.Key, secret bool) error {
 	if err != nil || output.dest == "" {
 		return ignoreAbort(err)
 	}
-	exported := func(result gpg.Result) bool { return result.Status.Has("EXPORTED") }
-	_, err = a.runToFile(ctx, gpg.ExportCommand([]string{key.Fingerprint}, secret, true), output, exported)
+	exported := func(result gpg.Result) bool { return result.Succeeded("EXPORTED") }
+	_, _, err = a.runToFile(ctx, gpg.ExportCommand([]string{key.Fingerprint}, secret, true), output, exported)
 	return err
 }
 
@@ -135,7 +135,7 @@ func (a *App) createRevocationCertificate(ctx context.Context, key gpg.Key) erro
 	if err != nil || output.dest == "" {
 		return ignoreAbort(err)
 	}
-	if _, err := a.runToFile(ctx, cmd, output, func(gpg.Result) bool { return true }); err != nil {
+	if _, _, err := a.runToFile(ctx, cmd, output, func(result gpg.Result) bool { return result.Succeeded() }); err != nil {
 		return err
 	}
 	fmt.Fprintln(a.out, revocsNote)
@@ -190,29 +190,31 @@ func (a *App) outputDir() string {
 }
 
 // runToFile runs cmd with stdout going to a temp file that replaces the
-// destination only if gpg succeeded and wrote something.
-func (a *App) runToFile(ctx context.Context, cmd gpg.Command, output outputFile, succeeded func(gpg.Result) bool) (gpg.Result, error) {
+// destination only if gpg succeeded and wrote something. succeeded judges the
+// whole result, exit code included (gpg.Result.Succeeded for most commands).
+// ran is false when the user declined.
+func (a *App) runToFile(ctx context.Context, cmd gpg.Command, output outputFile, succeeded func(gpg.Result) bool) (result gpg.Result, ran bool, err error) {
 	out, err := fsout.Create(output.dest)
 	if err != nil {
-		return gpg.Result{}, err
+		return gpg.Result{}, false, err
 	}
 	fmt.Fprintf(a.out, "\nOutput file: %s", sanitize.Line(output.dest))
-	result, ran, err := a.confirmAndRun(ctx, cmd.WithStdout(out.Writer()))
-	if err != nil || !ran || result.ExitCode != 0 {
-		return result, errors.Join(err, out.Abort())
+	result, ran, err = a.confirmAndRun(ctx, cmd.WithStdout(out.Writer()))
+	if err != nil || !ran {
+		return result, ran, errors.Join(err, out.Abort())
 	}
 	if !succeeded(result) || !hasContent(out.Writer()) {
-		fmt.Fprintln(a.out, "gpg wrote nothing; no file was created.")
-		return result, errors.Join(errGPGFailed, out.Abort())
+		fmt.Fprintln(a.out, "No file was created.")
+		return result, true, errors.Join(errGPGFailed, out.Abort())
 	}
 	if err := out.Commit(output.overwrite); err != nil {
 		if errors.Is(err, fsout.ErrExists) {
-			return result, fmt.Errorf("%s appeared meanwhile; not replaced", sanitize.Line(output.dest))
+			return result, true, fmt.Errorf("%s appeared meanwhile; not replaced", sanitize.Line(output.dest))
 		}
-		return result, err
+		return result, true, err
 	}
 	fmt.Fprintf(a.out, "Wrote %s\n", sanitize.Line(output.dest))
-	return result, nil
+	return result, true, nil
 }
 
 func hasContent(file *os.File) bool {
