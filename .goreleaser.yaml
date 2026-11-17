@@ -39,6 +39,13 @@ archives:
           <<: *info
           mode: 0644
 
+# Source tarball (git archive of the tag) for the Homebrew tap's build-from-source
+# formula; listed in the signed checksums.txt like every other archive.
+source:
+  enabled: true
+  name_template: "{{ .ProjectName }}-{{ .Version }}"
+  prefix_template: "{{ .ProjectName }}-{{ .Version }}/"
+
 checksum:
   name_template: checksums.txt
 
