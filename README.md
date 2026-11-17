@@ -1,6 +1,6 @@
 # cryptosis
 
-Menu-driven terminal front-end for [GnuPG](https://gnupg.org). Pre-release.
+Menu-driven terminal front-end for [GnuPG](https://gnupg.org).
 
 cryptosis implements no cryptography: every operation runs the system `gpg`, shown in full and confirmed first. Passphrases go only through gpg-agent's pinentry.
 
@@ -17,17 +17,27 @@ cryptosis implements no cryptography: every operation runs the system `gpg`, sho
 
 ## Install
 
+None of these install gpg or pinentry; bring your own.
+
+One line, either:
+
 ```sh
+# Go: builds from source; the module is checked against the public checksum database (sum.golang.org)
+go install github.com/turiya-fps/cryptosis/cmd/cryptosis@latest
+
+# Script: prebuilt binary, sha256-checked (and signature-checked if cosign is installed; see below)
 curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/turiya-fps/cryptosis/main/install.sh | bash
 ```
 
-Installs to `~/.local/bin`. Env: `CRYPTOSIS_VERSION` (pin tag), `CRYPTOSIS_INSTALL_DIR`, `CRYPTOSIS_REQUIRE_COSIGN=1`.
+To pin a version: `@v0.3.1` instead of `@latest`, or `… | CRYPTOSIS_VERSION=v0.3.1 bash`.
 
-The sha256 check proves integrity only. Authenticity needs [cosign](https://docs.sigstore.dev/cosign/system_config/installation/): if installed, the script verifies `checksums.txt` was signed by this repo's release workflow.
+**Homebrew** (macOS/Linux; builds from the source archive listed in the release's signed `checksums.txt`):
 
-From source: `go install github.com/turiya-fps/cryptosis/cmd/cryptosis@latest`
+```sh
+brew install turiya-fps/tap/cryptosis
+```
 
-Manual verification:
+**Release binaries**, verified by hand: download the archive for your platform plus `checksums.txt` and `checksums.txt.sigstore.json` from [Releases](https://github.com/turiya-fps/cryptosis/releases), then:
 
 ```sh
 sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 …
@@ -41,6 +51,10 @@ gh attestation verify --repo turiya-fps/cryptosis cryptosis_<version>_<os>_<arch
 macOS binaries are not notarized; browser downloads need `xattr -d com.apple.quarantine cryptosis` (curl downloads don't).
 
 Builds are reproducible: `go version -m cryptosis` shows the Go version to rebuild the tag with.
+
+**Install script details:** installs to `~/.local/bin`. Env: `CRYPTOSIS_VERSION` (pin tag), `CRYPTOSIS_INSTALL_DIR`, `CRYPTOSIS_REQUIRE_COSIGN=1`.
+
+The sha256 check proves integrity only. Authenticity needs [cosign](https://docs.sigstore.dev/cosign/system_config/installation/): if installed, the script verifies `checksums.txt` was signed by this repo's release workflow. With `CRYPTOSIS_REQUIRE_COSIGN=1` it refuses to install without that check, which makes it equivalent to the manual steps above apart from `gh attestation verify`.
 
 ## Usage
 
