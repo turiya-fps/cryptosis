@@ -129,12 +129,13 @@ func primaryUserID(key gpg.Key) string {
 }
 
 // groupFingerprint splits a fingerprint into blocks of four for reading aloud.
+// The result is sanitized: callers may pass server-supplied text.
 func groupFingerprint(fpr string) string {
 	var blocks []string
 	for start := 0; start < len(fpr); start += 4 {
 		blocks = append(blocks, fpr[start:min(start+4, len(fpr))])
 	}
-	return strings.Join(blocks, " ")
+	return sanitize.Line(strings.Join(blocks, " "))
 }
 
 // truncateRunes shortens s to at most limit runes, marking the cut.

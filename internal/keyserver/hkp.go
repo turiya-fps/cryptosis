@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/turiya-fps/cryptosis/internal/fetch"
+	"github.com/turiya-fps/cryptosis/internal/gpg"
 )
 
 // SearchResult is one key from an HKP search listing.
@@ -71,10 +72,15 @@ func (c *Client) Search(ctx context.Context, term string) ([]SearchResult, error
 //
 // Only pub and uid lines are read; a uid line belongs to the preceding pub
 // line. uid text is %XX-decoded; colons inside UIDs arrive escaped.
+//
+// The pub field is server-controlled and later shown and used as a fetch
+// query, so entries whose field is not a full fingerprint or long key ID
+// (short key IDs, garbage, terminal escapes) are dropped with their uid lines.
 func ParseIndex(data []byte) ([]SearchResult, error) {
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var results []SearchResult
+	skipping := false // uid lines of a dropped pub entry
 	for scanner.Scan() {
 		line := scanner.Text()
 		switch {
@@ -83,9 +89,12 @@ func ParseIndex(data []byte) ([]SearchResult, error) {
 			if err != nil {
 				return nil, err
 			}
-			results = append(results, result)
+			skipping = !gpg.IsFingerprint(result.Fingerprint) && !gpg.IsKeyID(result.Fingerprint)
+			if !skipping {
+				results = append(results, result)
+			}
 		case strings.HasPrefix(line, "uid:"):
-			if len(results) == 0 {
+			if len(results) == 0 || skipping {
 				continue
 			}
 			fields := strings.Split(line, ":")
