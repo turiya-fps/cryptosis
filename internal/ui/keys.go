@@ -24,7 +24,8 @@ const (
 type keyAction int
 
 const (
-	actionExportPublic keyAction = iota
+	actionShowPublic keyAction = iota
+	actionExportPublic
 	actionExportSecret
 	actionSetExpiry
 	actionSetOwnertrust
@@ -206,7 +207,7 @@ func (a *App) manageKey(ctx context.Context, fpr string) error {
 }
 
 func (a *App) chooseKeyAction(hasSecret bool) (keyAction, error) {
-	options := []huh.Option[keyAction]{huh.NewOption("Export public key", actionExportPublic)}
+	options := []huh.Option[keyAction]{huh.NewOption("Show public key (no file)", actionShowPublic), huh.NewOption("Export public key", actionExportPublic)}
 	if hasSecret {
 		options = append(options,
 			huh.NewOption("Export secret key", actionExportSecret),
@@ -232,6 +233,8 @@ func (a *App) chooseKeyAction(hasSecret bool) (keyAction, error) {
 
 func (a *App) runKeyAction(ctx context.Context, action keyAction, key gpg.Key, hasSecret bool) error {
 	switch action {
+	case actionShowPublic:
+		return a.showPublicKey(ctx, key)
 	case actionExportPublic:
 		return a.exportKey(ctx, key, false)
 	case actionExportSecret:

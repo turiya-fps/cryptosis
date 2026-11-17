@@ -4,7 +4,7 @@ Menu-driven terminal front-end for [GnuPG](https://gnupg.org). Pre-release.
 
 cryptosis implements no cryptography: every operation runs the system `gpg`, shown in full and confirmed first. Passphrases go only through gpg-agent's pinentry.
 
-- **Keys:** list, generate, import (previewed), export, delete, expiry, owner trust, revocation cert
+- **Keys:** list, generate, import (previewed), show on screen, export, delete, expiry, owner trust, revocation cert
 - **Encrypt & decrypt:** pasted text, clipboard, any file (binary, large files streamed), or a file picked from your PGP directory; optional signing; signatures reported on decrypt
 - **Sign & verify:** detached, cleartext or inline signatures
 - **Keyserver / WKD:** fetch, search, publish

@@ -22,6 +22,22 @@ const (
 	revocsNote          = "Keep it offline: anyone holding it can revoke your key."
 )
 
+// showPublicKey displays the armored public key on screen without writing a
+// file. Exporting a public key changes nothing, so the command is previewed
+// and run without confirmation, like a listing; the armored output is shown
+// in the cleared full-screen view and vanishes from scrollback.
+func (a *App) showPublicKey(ctx context.Context, key gpg.Key) error {
+	result, err := a.runReadOnly(ctx, gpg.ExportCommand([]string{key.Fingerprint}, false, true))
+	if err != nil {
+		return err
+	}
+	if !result.Succeeded("EXPORTED") {
+		fmt.Fprintln(a.out, "No public key was exported.")
+		return errGPGFailed
+	}
+	return a.showOnScreen(string(result.Stdout), "Public key "+key.KeyID+":")
+}
+
 func (a *App) exportKey(ctx context.Context, key gpg.Key, secret bool) error {
 	if secret {
 		confirmed, err := a.confirmTypedFingerprint(secretExportWarning, key.Fingerprint)

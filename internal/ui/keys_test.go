@@ -195,6 +195,66 @@ func TestLoadKeyringReadsTrustDBWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestShowPublicKeyDisplaysArmorWithoutWritingFile(t *testing.T) {
+	app, out, home := newTestApp(t)
+	fpr := gpgtest.GenerateKey(t, app.Runner.Bin(), home, "Own <own@example.org>")
+	ring, err := app.loadKeyring(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, _ := ring.find(fpr)
+	app.SetInput(strings.NewReader("\n"))
+
+	if err := app.showPublicKey(context.Background(), key); err != nil {
+		t.Fatal(err)
+	}
+
+	printed := out.String()
+	if !strings.Contains(printed, "--export") || !strings.Contains(printed, "--armor") {
+		t.Errorf("armored export command not previewed:\n%s", printed)
+	}
+	if !strings.Contains(printed, "-----BEGIN PGP PUBLIC KEY BLOCK-----") {
+		t.Errorf("armored public key missing from output:\n%s", printed)
+	}
+	if !strings.Contains(printed, "\x1b[?1049h") || !strings.Contains(printed, "\x1b[?1049l") {
+		t.Errorf("full-screen viewer not entered and cleared:\n%q", printed)
+	}
+}
+
+// Security check: the shown key must be exactly what gpg exported (no
+// sanitization damage, so it stays copy-paste importable) and the output may
+// contain no escape bytes beyond the full-screen viewer's own sequences.
+func TestShowPublicKeyVerbatimAndFreeOfEscapeInjection(t *testing.T) {
+	app, out, home := newTestApp(t)
+	fpr := gpgtest.GenerateKey(t, app.Runner.Bin(), home, "Own <own@example.org>")
+	ring, err := app.loadKeyring(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, _ := ring.find(fpr)
+	app.SetInput(strings.NewReader("\n"))
+
+	raw, err := exec.Command(app.Runner.Bin(), "--homedir", home, "--batch", "--armor", "--export", "--", fpr).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.showPublicKey(context.Background(), key); err != nil {
+		t.Fatal(err)
+	}
+
+	printed := out.String()
+	if !strings.Contains(printed, string(raw)) {
+		t.Errorf("displayed armor differs from raw gpg export (%d bytes)", len(raw))
+	}
+	// The viewer emits exactly six ESC bytes: entering and leaving the
+	// alternate screen, each as buffer-switch + cursor-home + clear.
+	const enter = "\x1b[?1049h\x1b[H\x1b[2J"
+	const leave = "\x1b[?1049l\x1b[H\x1b[2J"
+	if got := strings.Count(printed, "\x1b"); got != 6 || strings.Count(printed, enter) != 1 || strings.Count(printed, leave) != 1 {
+		t.Errorf("output holds %d escape bytes (want exactly the viewer sequences):\n%q", got, printed)
+	}
+}
+
 func TestPreviewImportListsKeysWithoutImporting(t *testing.T) {
 	source, _, sourceHome := newTestApp(t)
 	fpr := gpgtest.GenerateKey(t, source.Runner.Bin(), sourceHome, "Peer <peer@example.org>")
