@@ -135,6 +135,30 @@ func TestSearchParsesMachineReadable(t *testing.T) {
 	}
 }
 
+func TestParseIndexDropsEntriesWithoutValidFingerprint(t *testing.T) {
+	results, err := ParseIndex([]byte("info:1:1\n" +
+		"pub:\x1b]0;PWNED\x07AAAA:22:256:1700000000::\n" + // terminal escape
+		"uid:Mallory:1700000000::\n" +
+		"pub:5D06DB72:1:2048:1600000000::\n" + // short key ID
+		"uid:Short:1600000000::\n" +
+		"pub:" + strings.ToLower(testFpr) + ":22:256:1700000000::\n" +
+		"uid:Alice:1700000000::\n" +
+		"pub:438F68FF5D06DB72:22:256:1700000000::\n" + // long key ID
+		"uid:Bob:1700000000::\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2: %+v", len(results), results)
+	}
+	if results[0].Fingerprint != testFpr || len(results[0].UIDs) != 1 || results[0].UIDs[0] != "Alice" {
+		t.Errorf("first result = %+v, want Alice with upper-case fingerprint and only her uid", results[0])
+	}
+	if results[1].Fingerprint != "438F68FF5D06DB72" || len(results[1].UIDs) != 1 || results[1].UIDs[0] != "Bob" {
+		t.Errorf("second result = %+v, want Bob by long key ID", results[1])
+	}
+}
+
 func TestSearchUnsupportedAndEmpty(t *testing.T) {
 	client, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Query().Get("search") {

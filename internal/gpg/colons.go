@@ -229,12 +229,17 @@ func unescapeColonField(s string) string {
 // IsFingerprint reports whether s is a v4 (40 hex) or v5/v6 (64 hex) fingerprint
 // in gpg's canonical upper-case form.
 func IsFingerprint(s string) bool {
-	if len(s) != 40 && len(s) != 64 {
-		return false
-	}
+	return (len(s) == 40 || len(s) == 64) && isUpperHex(s)
+}
+
+// IsKeyID reports whether s is a long (16 hex) key ID in upper case.
+func IsKeyID(s string) bool {
+	return len(s) == 16 && isUpperHex(s)
+}
+
+func isUpperHex(s string) bool {
 	for _, c := range []byte(s) {
-		isUpperHex := c >= '0' && c <= '9' || c >= 'A' && c <= 'F'
-		if !isUpperHex {
+		if (c < '0' || c > '9') && (c < 'A' || c > 'F') {
 			return false
 		}
 	}

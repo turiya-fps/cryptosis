@@ -131,6 +131,22 @@ func TestUnescapeColonField(t *testing.T) {
 	}
 }
 
+func TestIsKeyID(t *testing.T) {
+	tests := map[string]bool{
+		"438F68FF5D06DB72":   true,
+		"438f68ff5d06db72":   false,
+		"5D06DB72":           false,
+		"438F68FF5D06DB7G":   false,
+		"\x1b[1A5D06DB72AAA": false,
+		"":                   false,
+	}
+	for in, want := range tests {
+		if got := IsKeyID(in); got != want {
+			t.Errorf("IsKeyID(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
 func TestIsFingerprint(t *testing.T) {
 	tests := map[string]bool{
 		"BB11B7DC4D321FCCFB1212E7438F68FF5D06DB72":                         true,

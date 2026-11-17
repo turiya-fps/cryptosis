@@ -120,6 +120,11 @@ func (a *App) fetchKeyByFingerprint(ctx context.Context, preset string) error {
 		}
 	}
 	query = strings.ToUpper(strings.TrimSpace(query))
+	// Presets come from search results and signatures, not the validated
+	// prompt; the query is printed and becomes the fingerprint check.
+	if !gpg.IsFingerprint(query) && !gpg.IsKeyID(query) {
+		return fmt.Errorf("not a fingerprint or long key ID: %q", query)
+	}
 	client, err := a.keyserverClient()
 	if err != nil {
 		return err

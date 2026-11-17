@@ -1,11 +1,16 @@
 package ui
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/turiya-fps/cryptosis/internal/config"
 	"github.com/turiya-fps/cryptosis/internal/gpg"
 	"github.com/turiya-fps/cryptosis/internal/keyserver"
+	"github.com/turiya-fps/cryptosis/internal/sanitize"
 )
 
 func TestCheckImportedKeys(t *testing.T) {
@@ -69,6 +74,31 @@ func TestSearchResultLabel(t *testing.T) {
 	}
 	if strings.Contains(searchResultLabel(keyserver.SearchResult{Fingerprint: strings.Repeat("A", 16), Revoked: true}), "[revoked]") == false {
 		t.Fatal("revoked flag missing")
+	}
+}
+
+func TestGroupFingerprintSanitizes(t *testing.T) {
+	for _, hostile := range []string{"\x1b[1A", "\x1b]0;PWNED\x07AAAA", "\u202eABCD", "\xe2\x80"} {
+		if got := groupFingerprint(hostile); strings.ContainsFunc(got, sanitize.IsUnsafeRune) || !utf8.ValidString(got) {
+			t.Errorf("groupFingerprint(%q) = %q, still unsafe", hostile, got)
+		}
+	}
+	if got := groupFingerprint(strings.Repeat("A", 8)); got != "AAAA AAAA" {
+		t.Errorf("grouping changed: %q", got)
+	}
+}
+
+func TestFetchKeyByFingerprintRejectsBadPreset(t *testing.T) {
+	var out bytes.Buffer
+	app := New(Startup{Config: config.Default()}, &out)
+	for _, preset := range []string{"\x1b[1A\x1b[2K", "A", "5D06DB72"} {
+		err := app.fetchKeyByFingerprint(context.Background(), preset)
+		if err == nil {
+			t.Errorf("preset %q accepted", preset)
+		}
+	}
+	if strings.ContainsRune(out.String(), 0x1b) {
+		t.Errorf("escape reached output: %q", out.String())
 	}
 }
 
