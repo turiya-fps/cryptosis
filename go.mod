@@ -3,7 +3,7 @@ module github.com/turiya-fps/cryptosis
 go 1.26.0
 
 require (
-	charm.land/bubbletea/v2 v2.1.1
+	charm.land/bubbletea/v2 v2.1.2
 	charm.land/huh/v2 v2.0.3
 	github.com/atotto/clipboard v0.1.4
 	golang.org/x/sys v0.50.0
